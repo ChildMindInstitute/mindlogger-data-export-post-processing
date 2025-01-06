@@ -9,7 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
-# Idea / PyCharm
+# VSCode / Idea / PyCharm
 .idea/
 
 # MacOS generated files
