@@ -19,9 +19,18 @@ USER_ACTIVITY_SCHEDULE_FILENAME = "user-activity-schedule.csv"
 class MindloggerData:
     """Data model of Mindlogger export."""
 
-    def __init__(self, report: pl.DataFrame):
+    def __init__(
+        self,
+        report: pl.DataFrame,
+        flow: pl.DataFrame,
+        history: pl.DataFrame,
+        activity_history: pl.DataFrame,
+    ):
         """Initialize MindloggerData object."""
         self.report_frame = report
+        self.flow_frame = flow
+        self.history_frame = history
+        self.activity_history_frame = activity_history
 
     @classmethod
     def create(cls, export_dir: Path) -> MindloggerData:
@@ -54,8 +63,16 @@ class MindloggerData:
         if report.is_empty():
             raise FileNotFoundError(f"No report CSV files found in {export_dir}.")
 
+        flow = pl.read_csv(export_dir / "flow-items.csv")
+        history = pl.read_csv(export_dir / "user-flow-schedule.csv")
+        activity_history = (
+            pl.read_csv(activity_path)
+            if (activity_path := export_dir / "user-activity-schedule.csv").exists()
+            else None
+        )
+
         # TODO: Make preprocessors configurable.
-        for name, report_preprocessor in REPORT_PREPROCESSORS:
+        for name, report_preprocessor in REPORT_PREPROCESSORS.items():
             LOG.debug("Running Report Preprocessor: %s", name)
             report = report_preprocessor().run(report)
-        return cls(report)
+        return cls(report, flow, history, activity_history)
