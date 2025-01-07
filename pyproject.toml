@@ -73,12 +73,8 @@ extend-ignore = [
 ]
 
 [tool.ruff.lint.extend-per-file-ignores]
-"**/tests/**/*.py" = ["S101", "SLF001", "INP001"]
+"tests/**/*.py" = ["S101", "SLF001", "INP001"]
 "scripts/*.py" = ["T20"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-[tool.pytest.ini_options]
-testpaths = ["packages/*/tests"]
-norecursedirs = "*.egg .* _darcs build CVS dist venv docs *.egg-info .git .tox __pycache__ envs api symptomchecker-api"

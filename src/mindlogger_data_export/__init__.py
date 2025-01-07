@@ -1,6 +1,11 @@
 """Mindlogger Data Export module."""
 
-from .__main__ import cli
+from .main import Config, cli, main
 from .mindlogger import MindloggerData
 
-__all__ = ["cli", "MindloggerData"]
+__all__ = [
+    "cli",
+    "main",
+    "Config",
+    "MindloggerData",
+]

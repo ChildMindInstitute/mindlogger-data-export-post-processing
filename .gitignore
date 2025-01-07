@@ -14,3 +14,4 @@ wheels/
 
 # MacOS generated files
 .DS_Store
+*.code-workspace
