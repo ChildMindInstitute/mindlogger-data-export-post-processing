@@ -6,7 +6,7 @@ from typing import Protocol
 
 import polars as pl
 
-from .report_processors import (
+from .processors import (
     DataDictionaryProcessor,
     DateTimeProcessor,
     OptionsUnnestingProcessor,

@@ -6,8 +6,6 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
-from typing import Literal
 
 import polars as pl
 
@@ -59,47 +57,6 @@ class MindloggerResponseOption:
     name: str
     value: int
     score: int | None
-
-
-@dataclass
-class MindloggerResponse:
-    """Data model of a Mindlogger response."""
-
-    response_type: Literal[
-        "raw_value",  # "<value>"
-        "value",  # value: <value> | <value_1>, <value_2>...
-        "null_value",  # value: null
-        "text",  # text: "<value>"
-        "file",  # <File URL / Path>
-        "date",  # date: "<day>/<month>/<year>"
-        "time",  # time: hr <hour> min <minute>
-        "time_range",  # time_range: from hr <start_hour> min <start_min> / to hr <end_hour> min <end_min>
-        "geo",  # geo: lat <latitude> long <longitude>
-        "row_single",  # <row_1>: <value>[\n<row_2>: <value>...]
-        "row_multi",  # <row_1>: <value_1>[, <value_2>...][\n<row_2>: [<value_1>, <value_2>...]...]
-    ]
-    raw_value: str | None = None
-    text: str | None = None
-    null_value: bool | None = None
-    value: str | None = None
-    values: list[str] | None = None
-    file: Path | None = None
-    date: dict[str, int] | None = None
-    time: dict[str, int] | None = None
-    time_range: dict[str, dict[str, int]] | None = None
-    geo: dict[str, float] | None = None
-    row_single: list[dict[str, str]] | None = None
-    row_multi: list[dict[str, str | list[str]]] | None = None
-
-
-@dataclass
-class MindloggerItem:
-    """Data model of a Mindlogger item."""
-
-    id: str
-    name: str
-    prompt: str
-    options: str | None = None
 
 
 @dataclass
