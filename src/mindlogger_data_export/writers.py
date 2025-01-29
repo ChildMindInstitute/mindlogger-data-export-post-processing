@@ -14,7 +14,7 @@ class OutputWriter(Protocol):
 
     NAME: str
 
-    WRITERS: dict[str, OutputWriter] = {}
+    WRITERS: dict[str, type[OutputWriter]] = {}
 
     def __init_subclass__(cls, **kwargs):
         """Register preprocessor subclasses."""
@@ -26,6 +26,11 @@ class OutputWriter(Protocol):
     ) -> None:
         """Write data to output directory."""
         ...
+
+    @classmethod
+    def create(cls, name: str) -> OutputWriter:
+        """Create an output writer by name."""
+        return cls.WRITERS[name]()
 
 
 class CsvWriter(OutputWriter):
@@ -42,6 +47,7 @@ class CsvWriter(OutputWriter):
     ) -> None:
         """Write data to output directory."""
         # Convert duration to milliseconds for CSV output.
+        df = data.clone()
         df = data.with_columns(
             cs.duration().dt.total_milliseconds().name.suffix("_ms")
         ).drop(cs.duration())
@@ -74,8 +80,9 @@ class ParquetWriter(OutputWriter):
         drop_null_columns: bool = False,
     ) -> None:
         """Write data to output directory."""
-        del drop_null_columns
-        df = data.report
+        df = data.clone()
+        if drop_null_columns:
+            df = df.select([s.name for s in df if not (s.null_count() == df.height)])
 
         # Write to Parquet.
-        df.write_parquet(output_path.with_suffix("parquet"))
+        df.write_parquet(output_path.with_suffix(".parquet"))
