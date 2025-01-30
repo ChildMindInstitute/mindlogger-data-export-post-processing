@@ -103,27 +103,24 @@ class MindloggerData:
         return f"MindloggerData: {self._report_frame.columns}\n\n{self._report_frame.head()}"
 
     @classmethod
-    def create(
-        cls,
-        config: MindloggerExportConfig,
-    ) -> MindloggerData:
-        """Read Mindlogger export and create MindloggerData object.
+    def load(cls, config: MindloggerExportConfig) -> pl.DataFrame:
+        """Read Mindlogger export into DataFrame.
 
-        This factory method reads a full Mindlogger export directory,
-        runs pre-processors, and creates a MindloggerData object to represent
-        the full export.
+        This class method reads all reports from a Mindlogger export directory,
+        and returns a single DataFrame object.
 
         Args:
             config: Mindlogger export configuration.
 
         Returns:
-            MindloggerData object.
+            DataFrame object.
 
         Raises:
             FileNotFoundError: If export_dir not found, or does not contain any
                 report.csv files.
             NotADirectoryError: If export_dir is not a directory.
         """
+        # TODO: Integrate pre-processing here.
         if not config.input_dir.exists():
             raise FileNotFoundError(f"Export directory {config.input_dir} not found.")
         if not config.input_dir.is_dir():
@@ -138,5 +135,19 @@ class MindloggerData:
             raise FileNotFoundError(
                 f"No report CSV files found in {config.input_dir}."
             ) from None
+        return report
 
-        return cls(report)
+    @classmethod
+    def create(
+        cls,
+        config: MindloggerExportConfig,
+    ) -> MindloggerData:
+        """Loads Mindlogger report export and creates MindloggerData for inspection.
+
+        Args:
+            config: Mindlogger export configuration.
+
+        Returns:
+            MindloggerData object.
+        """
+        return cls(cls.load(config))

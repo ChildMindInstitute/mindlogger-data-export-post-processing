@@ -4,6 +4,7 @@ import polars as pl
 import pytest
 from polars.testing.asserts import assert_frame_equal
 
+from mindlogger_data_export.formats import NamedOutput
 from mindlogger_data_export.writers import OutputWriter
 
 
@@ -41,25 +42,27 @@ def parquet_writer():
 
 
 def test_csv_writer_removes_nested_fields(csv_writer, nested_fields_df, tmp_path):
-    csv_writer.write(nested_fields_df, tmp_path / "output.csv")
-    output_df = pl.read_csv(tmp_path / "output.csv")
+    csv_writer.write(NamedOutput("nested", nested_fields_df), tmp_path)
+    output_df = pl.read_csv(tmp_path / "nested.csv")
     assert "struct_columns" not in output_df.columns
     assert "list_columns" not in output_df.columns
 
 
 def test_csv_writer_removes_null_columns(csv_writer, null_columns_df, tmp_path):
-    csv_writer.write(null_columns_df, tmp_path / "output.csv", drop_null_columns=True)
-    output_df = pl.read_csv(tmp_path / "output.csv")
+    csv_writer.write(
+        NamedOutput("null_cols", null_columns_df), tmp_path, drop_null_columns=True
+    )
+    output_df = pl.read_csv(tmp_path / "null_cols.csv")
     assert "null_column" not in output_df.columns
 
 
 def test_csv_writer(csv_writer, dataframe, tmp_path):
-    csv_writer.write(dataframe, tmp_path / "output.csv")
+    csv_writer.write(NamedOutput("output", dataframe), tmp_path)
     output_df = pl.read_csv(tmp_path / "output.csv")
     assert_frame_equal(dataframe, output_df)
 
 
 def test_parquet_writer(parquet_writer, nested_fields_df, tmp_path):
-    parquet_writer.write(nested_fields_df, tmp_path / "output.parquet")
+    parquet_writer.write(NamedOutput("output", nested_fields_df), tmp_path)
     output_df = pl.read_parquet(tmp_path / "output.parquet")
     assert_frame_equal(nested_fields_df, output_df)

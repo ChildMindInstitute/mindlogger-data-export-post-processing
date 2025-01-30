@@ -8,6 +8,8 @@ from typing import Protocol
 import polars as pl
 import polars.selectors as cs
 
+from .formats import NamedOutput
+
 
 class OutputWriter(Protocol):
     """Protocol for output writers."""
@@ -22,7 +24,7 @@ class OutputWriter(Protocol):
         cls.WRITERS[cls.NAME] = cls
 
     def write(
-        self, data: pl.DataFrame, output_path: Path, *, drop_null_columns: bool = False
+        self, output: NamedOutput, output_dir: Path, *, drop_null_columns: bool = False
     ) -> None:
         """Write data to output directory."""
         ...
@@ -40,15 +42,15 @@ class CsvWriter(OutputWriter):
 
     def write(
         self,
-        data: pl.DataFrame,
-        output_path: Path,
+        output: NamedOutput,
+        output_dir: Path,
         *,
         drop_null_columns: bool = False,
     ) -> None:
         """Write data to output directory."""
         # Convert duration to milliseconds for CSV output.
-        df = data.clone()
-        df = data.with_columns(
+        df = output.output.clone()
+        df = output.output.with_columns(
             cs.duration().dt.total_milliseconds().name.suffix("_ms")
         ).drop(cs.duration())
 
@@ -64,7 +66,7 @@ class CsvWriter(OutputWriter):
             df = df.select([s.name for s in df if not (s.null_count() == df.height)])
 
         # Write to CSV.
-        df.write_csv(output_path.with_suffix(".csv"))
+        df.write_csv((output_dir / output.name).with_suffix(".csv"))
 
 
 class ParquetWriter(OutputWriter):
@@ -74,15 +76,15 @@ class ParquetWriter(OutputWriter):
 
     def write(
         self,
-        data: pl.DataFrame,
-        output_path: Path,
+        output: NamedOutput,
+        output_dir: Path,
         *,
         drop_null_columns: bool = False,
     ) -> None:
         """Write data to output directory."""
-        df = data.clone()
+        df = output.output.clone()
         if drop_null_columns:
             df = df.select([s.name for s in df if not (s.null_count() == df.height)])
 
         # Write to Parquet.
-        df.write_parquet(output_path.with_suffix(".parquet"))
+        df.write_parquet((output_dir / output.name).with_suffix(".parquet"))

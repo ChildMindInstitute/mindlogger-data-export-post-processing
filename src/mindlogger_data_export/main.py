@@ -22,12 +22,9 @@ def main(config: MindloggerExportConfig) -> None:
 
     for output_format in config.output_formats_or_all:
         formatter = OutputFormat.FORMATS[output_format]()
-        output = formatter.produce(ml_data.report)
-        output_path = (
-            config.output_dir_or_default
-            / f"report_{formatter.NAME}.{config.output_type}"
-        )
-        writer.write(output, output_path)
+        outputs = formatter.produce(ml_data.report)
+        for output in outputs:
+            writer.write(output, config.output_dir_or_default)
 
 
 def cli() -> None:
