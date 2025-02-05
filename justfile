@@ -1,11 +1,14 @@
+
+DOCKER_TAG := "cmiresearch/mdxpp"
+
 run +ARGS='':
     uv run mindlogger-data-export
 
 test +ARGS='':
     uv run pytest {{ ARGS }}
 
-build-docker TAG='cmiresearch/mdxpp':
-    docker buildx build -t {{ TAG }} .
+build-docker:
+    docker buildx build -t {{ DOCKER_TAG }} .
 
 run-docker +ARGS='': build-docker
-    docker run cmiresearch/mdxpp -- {{ ARGS }}
+    docker run {{ DOCKER_TAG }} -- {{ ARGS }}

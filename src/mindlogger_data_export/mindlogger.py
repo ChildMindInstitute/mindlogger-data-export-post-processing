@@ -4,18 +4,17 @@ from __future__ import annotations
 
 import logging
 from functools import cached_property
+from pathlib import Path
 
 import pandas as pd
 import polars as pl
 
-from .config import MindloggerExportConfig
 from .models import MindloggerUser, UserType
+from .processors import ReportProcessor
 
 LOG = logging.getLogger(__name__)
 
-FLOW_ITEMS_FILENAME = "flow-items.csv"
-FLOW_SCHEDULE_FILENAME = "user-flow-schedule.csv"
-USER_ACTIVITY_SCHEDULE_FILENAME = "user-activity-schedule.csv"
+MINDLOGGER_REPORT_PATTERN = "report*.csv"
 
 
 class MindloggerData:
@@ -35,17 +34,21 @@ class MindloggerData:
         """Get report DataFrame in Pandas format."""
         return self._report_frame.to_pandas()
 
-    def _users(self, user_type: UserType) -> list[MindloggerUser]:
-        """Get users for specific type."""
-        return list(
-            map(
-                MindloggerUser.from_struct_factory(user_type),
-                self._report_frame.select(
-                    user_info=pl.struct(*UserType.columns(user_type))
-                )
-                .get_column("user_info")
-                .unique(),
-            )
+    @property
+    def long_options_report(self) -> pl.DataFrame:
+        """Get report DataFrame with one option value per row, e.g. exploded data dictionary format."""
+        return MindloggerData.expand_options(self.report)
+
+    @property
+    def long_response_report(self) -> pl.DataFrame:
+        """Get report DataFrame with one response value per row."""
+        return MindloggerData.expand_responses(self.report)
+
+    @property
+    def long_report(self) -> pl.DataFrame:
+        """Get report DataFrame with one response value per row."""
+        return MindloggerData.expand_options(
+            MindloggerData.expand_responses(self.report)
         )
 
     @cached_property
@@ -98,19 +101,73 @@ class MindloggerData:
         """Return unique items in report in Pandas format."""
         return self.data_dictionary.to_pandas()
 
+    @staticmethod
+    def expand_options(df: pl.DataFrame) -> pl.DataFrame:
+        """Expand options struct to columns."""
+        return (
+            df.explode(pl.col("parsed_options"))
+            .with_columns(
+                pl.col("parsed_options").struct.unnest().name.prefix("option_")
+            )
+            .unique()
+        )
+
+    @staticmethod
+    def expand_responses(df: pl.DataFrame) -> pl.DataFrame:
+        """Expand responses struct to columns/rows."""
+        column_prefix = "response_"
+        return (
+            df.with_columns(
+                pl.col("parsed_response").struct.unnest().name.prefix(column_prefix)
+            )
+            # Expand value list to rows.
+            .explode(f"{column_prefix}value")
+            # Expand geo struct to lat/long columns.
+            .with_columns(
+                pl.col(f"{column_prefix}geo")
+                .struct.unnest()
+                .name.prefix(f"{column_prefix}geo_")
+            )
+            # Expand matrix list to rows.
+            .explode(f"{column_prefix}matrix")
+            # Unnest matrix struct to columns.
+            .with_columns(
+                pl.col(f"{column_prefix}matrix")
+                .struct.unnest()
+                .name.prefix(f"{column_prefix}matrix_")
+            )
+            # Expand matrix value list to rows.
+            .explode(f"{column_prefix}matrix_value")
+            # Exclude temporary struct columns.
+            .select(pl.exclude(f"{column_prefix}matrix", f"{column_prefix}geo"))
+        )
+
+    def _users(self, user_type: UserType) -> list[MindloggerUser]:
+        """Get users for specific type."""
+        return list(
+            map(
+                MindloggerUser.from_struct_factory(user_type),
+                self._report_frame.select(
+                    user_info=pl.struct(*UserType.columns(user_type))
+                )
+                .get_column("user_info")
+                .unique(),
+            )
+        )
+
     def __str__(self):
         """Return string representation of MindloggerData object reporting column names and report head."""
         return f"MindloggerData: {self._report_frame.columns}\n\n{self._report_frame.head()}"
 
     @classmethod
-    def load(cls, config: MindloggerExportConfig) -> pl.DataFrame:
+    def load(cls, input_dir: Path) -> pl.DataFrame:
         """Read Mindlogger export into DataFrame.
 
         This class method reads all reports from a Mindlogger export directory,
         and returns a single DataFrame object.
 
         Args:
-            config: Mindlogger export configuration.
+            input_dir: Path to directory containing Mindlogger export.
 
         Returns:
             DataFrame object.
@@ -120,34 +177,37 @@ class MindloggerData:
                 report.csv files.
             NotADirectoryError: If export_dir is not a directory.
         """
-        # TODO: Integrate pre-processing here.
-        if not config.input_dir.exists():
-            raise FileNotFoundError(f"Export directory {config.input_dir} not found.")
-        if not config.input_dir.is_dir():
-            raise NotADirectoryError(f"{config.input_dir} is not a directory.")
+        if not input_dir.exists():
+            raise FileNotFoundError(f"Export directory {input_dir} not found.")
+        if not input_dir.is_dir():
+            raise NotADirectoryError(f"{input_dir} is not a directory.")
 
-        LOG.debug("Reading report files from %s...", config.input_dir)
+        LOG.debug("Reading report files from %s...", input_dir)
 
         # Read report files.
         try:
-            report = pl.read_csv(config.input_dir / "report*.csv")
+            report = pl.read_csv(input_dir / MINDLOGGER_REPORT_PATTERN)
+            for proc in ["Subscale", "DateTime", "OptionsStruct", "ResponseStruct"]:
+                processor = ReportProcessor.PROCESSORS[proc]()
+                report = processor.process(report)
         except pl.exceptions.ComputeError:
             raise FileNotFoundError(
-                f"No report CSV files found in {config.input_dir}."
+                f"No report CSV files found in {input_dir}."
             ) from None
+
         return report
 
     @classmethod
     def create(
         cls,
-        config: MindloggerExportConfig,
+        input_dir: Path,
     ) -> MindloggerData:
         """Loads Mindlogger report export and creates MindloggerData for inspection.
 
         Args:
-            config: Mindlogger export configuration.
+            input_dir: Mindlogger export directory containing report*.csv.
 
         Returns:
             MindloggerData object.
         """
-        return cls(cls.load(config))
+        return cls(cls.load(input_dir))

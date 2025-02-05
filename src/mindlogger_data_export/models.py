@@ -5,14 +5,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 import polars as pl
 
 LOG = logging.getLogger(__name__)
 
 
-class UserType(Enum):
+class UserType(StrEnum):
     """Enumeration of Mindlogger user types."""
 
     SOURCE = "source"

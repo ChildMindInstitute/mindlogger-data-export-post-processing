@@ -8,7 +8,7 @@ from typing import Protocol
 import polars as pl
 import polars.selectors as cs
 
-from .formats import NamedOutput
+from .outputs import NamedOutput
 
 
 class OutputWriter(Protocol):
