@@ -35,21 +35,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Add SSH private keys for submodule repositories
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SC2_API_DEPLOY_KEY }}
-      - name: Clone submodules
-        run: git submodule update --init --recursive
       - name: Install uv
         uses: astral-sh/setup-uv@v3
       - name: Setup python
         run: uv python install
-      - uses: bufbuild/buf-action@v1
-        with:
-          setup_only: true
-      - name: Generate protos
-        run: buf generate
       - name: Install the project
         run: uv sync --all-extras --dev
       - name: Run mypy
