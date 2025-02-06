@@ -7,7 +7,7 @@ from enum import StrEnum, auto
 from pathlib import Path
 from typing import Annotated, Literal
 
-from tyro.conf import EnumChoicesFromValues, UseAppendAction, arg, subcommand
+from tyro.conf import EnumChoicesFromValues, UseAppendAction, arg
 
 from .outputs import Output
 
@@ -46,6 +46,14 @@ class OutputConfig:
     ] = field(default_factory=list)
     """List of output types to generate, run tool with --output-types-info or see documentation for detailed description."""
 
+    log_level: Annotated[LogLevel, EnumChoicesFromValues, arg(aliases=["-l"])] = (
+        LogLevel.INFO
+    )
+    """Logging level for the tool."""
+
+    timezone: str = "America/New_York"
+    """Timezone to which datetimes will be converted."""
+
     @property
     def output_dir_or_default(self) -> Path:
         """Get output directory, defaulting to input directory."""
@@ -55,20 +63,3 @@ class OutputConfig:
     def output_types_or_all(self) -> list[str]:
         """Get output types."""
         return self.outputs or list(Output.TYPES.keys())
-
-
-@dataclass
-class MindloggerDataConfig:
-    """Configuration object for Mindlogger Data Export tool."""
-
-    cmd: OutputTypesInfo | Annotated[OutputConfig, subcommand("run")] = field(
-        default_factory=OutputTypesInfo
-    )
-
-    log_level: Annotated[LogLevel, EnumChoicesFromValues, arg(aliases=["-l"])] = (
-        LogLevel.INFO
-    )
-    """Logging level for the tool."""
-
-    timezone: str = "America/New_York"
-    """Timezone to which datetimes will be converted."""

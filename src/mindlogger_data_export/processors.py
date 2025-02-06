@@ -32,21 +32,22 @@ class ReportProcessor(Protocol):
     """
 
     NAME: str
+    """Processor name."""
 
-    PROCESSORS: dict[str, type[ReportProcessor]] = {}
+    PRIORITY: int = 10
+    """Run order priority, lower values run first, negative values are skipped."""
 
-    DEPENDENCIES: list[type[ReportProcessor]] = []
+    PROCESSORS: list[type[ReportProcessor]] = []
+    """List of registered processors."""
 
     def __init_subclass__(cls, **kwargs):
         """Register preprocessor subclasses."""
         super().__init_subclass__(**kwargs)
-        cls.PROCESSORS[cls.NAME] = cls
+        if cls.PRIORITY >= 0:
+            cls.PROCESSORS.append(cls)
 
     def process(self, report: pl.DataFrame) -> pl.DataFrame:
         """Process the report, running dependencies first."""
-        for dep in self.DEPENDENCIES:
-            LOG.info("Processing dependency: %s", dep.NAME)
-            report = dep().process(report)
         return self._run(report)
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
@@ -66,10 +67,11 @@ class PandasReportProcessor(ReportProcessor):
 
     NAME = "PandasReportProcessor"
 
+    PRIORITY = -1
+
     def __init_subclass__(cls, **kwargs):
         """Register preprocessor subclasses."""
         super().__init_subclass__(**kwargs)
-        cls.PROCESSORS[cls.NAME] = cls
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert Polars DataFrame to Pandas DataFrame."""
@@ -77,6 +79,16 @@ class PandasReportProcessor(ReportProcessor):
 
     def _run_pd(self, report: pd.DataFrame) -> pd.DataFrame:
         """Convert Pandas DataFrame to Polars DataFrame."""
+
+
+class ColumnRenamingProcessor(ReportProcessor):
+    """Rename columns in DataFrame."""
+
+    NAME = "ColumnRenaming"
+    PRIORITY = 0
+
+    def _run(self, report: pl.DataFrame) -> pl.DataFrame:
+        return report.rename({"id": "activity_submission_id"})
 
 
 class DateTimeProcessor(ReportProcessor):
@@ -156,11 +168,12 @@ class SubscaleProcessor(ReportProcessor):
     """
 
     NAME = "Subscale"
+    PRIORITY = 5
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Process subscale columns."""
         df_cols = {
-            "id",
+            "activity_submission_id",
             "activity_flow_submission_id",
             "activity_scheduled_time",
             "activity_start_time",
@@ -196,7 +209,7 @@ class SubscaleProcessor(ReportProcessor):
             "timezone_offset",
         }
         id_cols = {
-            "id",
+            "activity_submission_id",
             "activity_flow_submission_id",
             "activity_scheduled_time",
             "activity_start_time",
@@ -226,27 +239,30 @@ class SubscaleProcessor(ReportProcessor):
             "timezone_offset",
         }
         response_cols = df_cols - id_cols
+        ss_value_cs = ~(
+            cs.by_name(id_cols)
+            | cs.by_name({"activity_score", "activity_score_text"})
+            | cs.starts_with("subscale_")
+        )
+
         ssdf = (
             report.select(pl.all().exclude(response_cols))
             .rename(
                 {
-                    "Final SubScale Score": "subscale__final_score",
-                    "Optional text for Final SubScale Score": "subscale_text__final_score",
+                    "Final SubScale Score": "activity_score",
+                    "Optional text for Final SubScale Score": "activity_score_text",
                 }
             )
-            .select(
-                ~cs.matches("^Optional text for .*$"),
+            .with_columns(
                 pl.col("^Optional text for .*$").name.map(
                     lambda n: f"subscale_text__{n[18:].replace(' ', '_')}"
                 ),
             )
-            .select(
-                cs.by_name(id_cols),
-                cs.starts_with("subscale_"),
-                (~(cs.by_name(id_cols) | cs.starts_with("subscale_"))).name.map(
-                    lambda ss: f"subscale__{ss.replace(" ", "_")}"
-                ),
+            .drop(pl.col("^Optional text for .*$"))
+            .with_columns(
+                ss_value_cs.name.map(lambda ss: f"subscale__{ss.replace(" ", "_")}")
             )
+            .drop(ss_value_cs)
             .unpivot(index=id_cols, variable_name="item", value_name="response")
             .filter(pl.col("response").is_not_null())
             .with_columns(item_id=None, prompt=None, options=None, rawScore=None)

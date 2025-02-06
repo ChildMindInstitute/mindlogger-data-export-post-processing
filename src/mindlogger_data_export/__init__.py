@@ -1,6 +1,5 @@
 """Mindlogger Data Export module."""
 
-from .config import MindloggerDataConfig
 from .main import cli, main
 from .mindlogger import MindloggerData
 from .models import MindloggerResponseOption, MindloggerUser, UserType
@@ -17,7 +16,6 @@ __all__ = [
     "cli",
     "main",
     "MindloggerData",
-    "MindloggerDataConfig",
     "MindloggerItem",
     "MindloggerResponseOption",
     "MindloggerUser",

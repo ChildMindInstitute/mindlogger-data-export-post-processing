@@ -5,12 +5,14 @@ from zoneinfo import ZoneInfo
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from mindlogger_data_export.parsers import ResponseTransformer
 from mindlogger_data_export.processors import (
     DateTimeProcessor,
     OptionsStructProcessor,
     ResponseStructProcessor,
+    SubscaleProcessor,
 )
 
 NYC_TZ = ZoneInfo("America/New_York")
@@ -240,3 +242,85 @@ def test_options_preprocessor(options_field, expected):
     )
     processed_report = preprocessor._run(report)
     assert processed_report["parsed_options"].to_list() == processed_options
+
+
+def test_subscale_processor():
+    """Test SubscaleProcessor."""
+    report = pl.DataFrame(
+        {
+            "activity_submission_id": [
+                "activity_submission_id_1",
+                "activity_submission_id_2",
+            ],
+            "activity_flow_submission_id": ["", ""],
+            "activity_scheduled_time": ["", ""],
+            "activity_start_time": ["", ""],
+            "activity_end_time": ["", ""],
+            "flag": ["", ""],
+            "secret_user_id": ["", ""],
+            "userId": ["", ""],
+            "source_user_subject_id": ["", ""],
+            "source_user_secret_id": ["", ""],
+            "source_user_nickname": ["", ""],
+            "source_user_relation": ["", ""],
+            "source_user_tag": ["", ""],
+            "target_user_subject_id": ["", ""],
+            "target_user_secret_id": ["", ""],
+            "target_user_nickname": ["", ""],
+            "target_user_tag": ["", ""],
+            "input_user_subject_id": ["", ""],
+            "input_user_secret_id": ["", ""],
+            "input_user_nickname": ["", ""],
+            "activity_id": ["", ""],
+            "activity_name": ["", ""],
+            "activity_flow_id": ["", ""],
+            "activity_flow_name": ["", ""],
+            "item": ["item_1", "item_2"],
+            "item_id": ["item_id_1", "item_id_2"],
+            "response": ["r_1", "r_2"],
+            "prompt": ["prompt_1", "prompt_2"],
+            "options": ["options_1", "options_2"],
+            "version": ["version_1", "version_2"],
+            "rawScore": [3, 5],
+            "reviewing_id": ["reviewing_id_1", "reviewing_id_2"],
+            "event_id": ["event_id_1", "event_id_2"],
+            "timezone_offset": ["timezone_offset_1", "timezone_offset_2"],
+            "Final SubScale Score": [1, 5],
+            "Optional text for Final SubScale Score": ["t_1", "t_2"],
+            "AVG": [2, 6],
+            "Optional text for AVG": ["t_3", "t_4"],
+        }
+    )
+    preprocessor = SubscaleProcessor()
+    processed_report = preprocessor._run(report)
+    assert "Final SubScale Score" not in processed_report.columns
+    assert "Optional text for Final SubScale Score" not in processed_report.columns
+    assert "AVG" not in processed_report.columns
+    assert "Optional text for AVG" not in processed_report.columns
+    assert processed_report.width == report.width - (2 * 2)
+    assert processed_report.height == report.height + (4 * 2)
+    expected = pl.DataFrame(
+        {
+            "activity_submission_id": (
+                ["activity_submission_id_1"] * 5 + ["activity_submission_id_2"] * 5
+            ),
+            "item": [
+                "item_1",
+                "subscale__AVG",
+                "activity_score",
+                "subscale_text__AVG",
+                "activity_score_text",
+                "item_2",
+                "subscale__AVG",
+                "activity_score",
+                "subscale_text__AVG",
+                "activity_score_text",
+            ],
+            "response": ["r_1", "2", "1", "t_3", "t_1", "r_2", "6", "5", "t_4", "t_2"],
+        }
+    )
+    assert_frame_equal(
+        processed_report.select("activity_submission_id", "item", "response"),
+        expected,
+        check_row_order=False,
+    )

@@ -87,35 +87,15 @@ def test_long_response():
     report = pl.DataFrame(
         {
             "parsed_response": [
-                "10",
-                "text: Some text here",
-                "text: Some multiline\ntext here",
-                "value: null",
-                "value: 2",
-                "value: 1, 2, 3",
-                "./path/to/file.mp4",
-                "date: 1/2/21",
-                "date: 04/05/2021",
-                "time: hr 12 min 30",
-                "time_range: from hr 9 min 30 / to hr 12 min 5",
-                "geo: lat 40.7128 long -74.0060",
-                "row1: 1\nrow2: 2",
-                "row1: 1, 2\nrow2: 3, 4",
-            ],
-        },
-    )
-    report = pl.DataFrame(
-        {
-            "parsed_response": [
                 {"type": "raw_value", "raw_value": "10"},
                 {"type": "text", "text": "Some text here"},
                 {"type": "text", "text": "Some multiline\ntext here"},
                 {"type": "null", "null_value": True},
                 {"type": "value", "value": [2]},
                 {"type": "value", "value": [1, 2, 3]},
-                {"type": "value", "file": "./path/to/file.mp4"},
-                {"type": "value", "date": date(2021, 2, 1)},
-                {"type": "value", "date": date(2021, 5, 4)},
+                {"type": "file", "file": "./path/to/file.mp4"},
+                {"type": "date", "date": date(2021, 2, 1)},
+                {"type": "date", "date": date(2021, 5, 4)},
                 {"type": "time", "time": time(12, 30)},
                 {"type": "time_range", "time_range": timedelta(hours=3, minutes=-25)},
                 {"type": "geo", "geo": {"latitude": 40.7128, "longitude": -74.0060}},
@@ -135,7 +115,25 @@ def test_long_response():
                 },
             ],
         },
-        schema={"parsed_response": ResponseParser.datatype},
+        schema={
+            "parsed_response": pl.Struct(
+                {
+                    "type": pl.String,
+                    "raw_value": pl.String,
+                    "null_value": pl.Boolean,
+                    "value": pl.List(pl.Int64),
+                    "text": pl.String,
+                    "file": pl.String,
+                    "date": date,
+                    "time": time,
+                    "time_range": timedelta,
+                    "geo": pl.Struct({"latitude": pl.Float64, "longitude": pl.Float64}),
+                    "matrix": pl.List(
+                        pl.Struct({"row": pl.String, "value": pl.List(pl.Int64)})
+                    ),
+                }
+            )
+        },
     )
     expected_df = {
         "response_raw_value": ["10"] + [None] * 19,
@@ -160,7 +158,7 @@ def test_long_response():
             "raw_value",
             "text",
             "text",
-            "null_value",
+            "null",
             "value",
             "value",
             "value",
@@ -197,7 +195,7 @@ def test_long_response():
             "response_matrix_value": pl.Int64,
         },
     )
-    expanded_report = MindloggerData.expand_responses(report)
+    expanded_report = MindloggerData.expand_responses(report).drop("parsed_response")
     assert_frame_equal(
         expanded_report,
         expected_df,

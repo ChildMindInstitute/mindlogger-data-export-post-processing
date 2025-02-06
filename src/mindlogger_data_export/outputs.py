@@ -53,12 +53,6 @@ class WideDataFormat(Output):
         return [NamedOutput("wide_data", data.report)]
 
 
-class ConcatenatedReportFormat(Output):
-    """Write concatenated report rows to CSV."""
-
-    NAME = "concatenated"
-
-
 class LongDataFormat(Output):
     """Long data format with all parsed nested types unnested / exploded."""
 
