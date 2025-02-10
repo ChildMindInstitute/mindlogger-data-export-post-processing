@@ -287,7 +287,7 @@ class SubscaleProcessor(ReportProcessor):
             )
             .drop(pl.col("^Optional text for .*$"))
             .with_columns(
-                ss_value_cs.name.map(lambda ss: f"subscale__{ss.replace(" ", "_")}")
+                ss_value_cs.name.map(lambda ss: f"subscale__{ss.replace(' ', '_')}")
             )
             .drop(ss_value_cs)
             .unpivot(index=id_cols, variable_name="item", value_name="response")
