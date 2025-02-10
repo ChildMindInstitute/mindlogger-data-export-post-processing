@@ -76,21 +76,18 @@ class ResponseTransformer(Transformer):
         return {"type": "null_value", "null_value": True}
 
     @v_args(inline=True)
-    def value_resp(self, value):  # noqa: D102
-        return {"type": "value", "value": [value]}
-
-    @v_args(inline=True)
     def multivalue_resp(self, ilist):  # noqa: D102
         return {"type": "value", "value": ilist}
 
-    def row_resp(self, items):  # noqa: D102
-        return {"type": "row_single", "row_single": items}
+    @v_args(inline=True)
+    def value_with_text_resp(self, ilist, text):  # noqa: D102
+        return {"type": "value_with_text", "value": ilist, "text": text}
 
     @v_args(inline=True)
     def row_kv(self, key, row_value):  # noqa: D102
         return {"row": key.value, "value": row_value.value}
 
-    def row_multi_resp(self, items):  # noqa: D102
+    def matrix_resp(self, items):  # noqa: D102
         return {"type": "matrix", "matrix": items}
 
     @v_args(inline=True)
@@ -121,14 +118,13 @@ class ResponseParser:
     RESPONSE_GRAMMAR = r"""
     start: text_resp
         | null_resp
-        | value_resp
         | multivalue_resp
+        | value_with_text_resp
         | date_resp
         | time_resp
         | time_range_resp
         | geo_resp
-        // | row_resp
-        | row_multi_resp
+        | matrix_resp
         | file_resp
         | raw_value_resp
 
@@ -139,11 +135,11 @@ class ResponseParser:
     // Matches null response in "value: null" format.
     null_resp.20: "value: null"
 
-    // Matches single value in "value: <value>" format.
-    value_resp.15: "value:" _WSI INT
+    // Matches value with text.
+    value_with_text_resp.10: "value:" _WSI vlist _WSI "|" _WSI "text:" _WSI _text
 
-    // Matches multiple values in "value: <value>, <value>, ..." format.
-    multivalue_resp.10: "value:" _WSI ilist
+    // Matches single or multiple values in "value: <value>, <value>, ..." format.
+    multivalue_resp.10: "value:" _WSI vlist
 
     // Matches date response in "date: <month>/<day>/<year>" format.
     date_resp.10: "date:" _WSI padded_two_digit "/" padded_two_digit "/" year
@@ -157,14 +153,14 @@ class ResponseParser:
     time_range_resp.10: "time_range:" _WSI "from" _WSI time _WSI "/" _WSI "to" _WSI time
 
     // Matches time in "hr <hour> min <minute>" format.
-    time: _hour _WSI _minute
+    time: "("? _hour ","? _WSI _minute ")"?
     _hour: "hr" _WSI padded_two_digit
     _minute: "min" _WSI padded_two_digit
 
     // Matches geo coordinates with latitude and longitude.
-    geo_resp.10: "geo:" _WSI _latitude _WSI _longitude
-    _latitude: "lat" _WSI SIGNED_FLOAT
-    _longitude: "long" _WSI SIGNED_FLOAT
+    geo_resp.10: "geo:" _WSI _latitude _WSI "/"? _WSI? _longitude
+    _latitude: "lat" _WSI "("? SIGNED_FLOAT ")"?
+    _longitude: "long" _WSI "("? SIGNED_FLOAT ")"?
 
     // Matches single multiple rows with single key-value pair per row.
     // row_resp.5: _sep{row_kv, _NL}
@@ -172,11 +168,11 @@ class ResponseParser:
     // _row_value: /[^,\n]+/
 
     // Matches multiple rows with key and list of values per row.
-    row_multi_resp.5: (row_kvv _NL?)+
-    row_kvv: _value ":" _WSI? ilist
+    matrix_resp.5: (row_kvv _NL?)+
+    row_kvv: _value ":" _WSI? vlist
 
     // Matches file path by ensuring string contains at least one slash and a 2-4 character extension.
-    file_resp.5: /\.?\/?.+\/.+\.\w{2,4}/
+    file_resp.5: /.+[-\/].+\.\w{3,4}/
 
     // Lowest priority catch-all rule.
     raw_value_resp.0: /.+/s
@@ -186,7 +182,7 @@ class ResponseParser:
     vlist: _sep{_value, _CSV}
 
     // Value is any non-empty alphanumeric string
-    _value: /\w+/
+    _value: /[.\w]+/
     _CSV: "," _WSI
     _sep{x, sep}: x (sep x)*
 
@@ -219,7 +215,7 @@ class ResponseParser:
                 "type": pl.String,
                 "raw_value": pl.String,
                 "null_value": pl.Boolean,
-                "value": pl.List(pl.Int64),
+                "value": pl.List(pl.String),
                 "text": pl.String,
                 "file": pl.String,
                 "date": date,
@@ -227,7 +223,7 @@ class ResponseParser:
                 "time_range": timedelta,
                 "geo": pl.Struct({"latitude": pl.Float64, "longitude": pl.Float64}),
                 "matrix": pl.List(
-                    pl.Struct({"row": pl.String, "value": pl.List(pl.Int64)})
+                    pl.Struct({"row": pl.String, "value": pl.List(pl.String)})
                 ),
             }
         )

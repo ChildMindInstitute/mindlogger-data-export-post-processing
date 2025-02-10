@@ -25,9 +25,11 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "jupyter>=1.1.1",
+    "mypy>=1.15.0",
     "pyarrow>=19.0.0",
     "pytest>=8.3.4",
     "pytest-datafiles>=3.0.0",
+    "ruff>=0.9.6",
 ]
 
 [tool.mypy]

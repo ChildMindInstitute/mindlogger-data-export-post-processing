@@ -1,5 +1,9 @@
 # Data folder, which may contain PHI
 data/
+!tests/data
+
+# Temp notebook
+scripts/explore.ipynb
 
 # Python-generated files
 __pycache__/

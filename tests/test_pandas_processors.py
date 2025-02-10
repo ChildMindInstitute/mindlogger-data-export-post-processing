@@ -13,7 +13,6 @@ class PandasReportProcessorForTst(PandasReportProcessor):
     """Test PandasReportProcessor."""
 
     NAME = "PandasTest"
-    DEPENDENCIES = ["DateTime", "OptionsStruct", "UnnestedResponse"]
 
     def _run_pd(self, report: pd.DataFrame) -> pd.DataFrame:
         """Convert Pandas DataFrame to Polars DataFrame."""

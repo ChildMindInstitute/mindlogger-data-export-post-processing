@@ -32,21 +32,22 @@ class ReportProcessor(Protocol):
     """
 
     NAME: str
+    """Processor name."""
 
-    PROCESSORS: dict[str, type[ReportProcessor]] = {}
+    PRIORITY: int = 10
+    """Run order priority, lower values run first, negative values are skipped."""
 
-    DEPENDENCIES: list[str] = []
+    PROCESSORS: list[type[ReportProcessor]] = []
+    """List of registered processors."""
 
     def __init_subclass__(cls, **kwargs):
         """Register preprocessor subclasses."""
         super().__init_subclass__(**kwargs)
-        cls.PROCESSORS[cls.NAME] = cls
+        if cls.PRIORITY >= 0:
+            cls.PROCESSORS.append(cls)
 
     def process(self, report: pl.DataFrame) -> pl.DataFrame:
         """Process the report, running dependencies first."""
-        for dep in self.DEPENDENCIES:
-            LOG.info("Processing dependency: %s", dep)
-            report = self.PROCESSORS[dep]().process(report)
         return self._run(report)
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
@@ -66,10 +67,11 @@ class PandasReportProcessor(ReportProcessor):
 
     NAME = "PandasReportProcessor"
 
+    PRIORITY = -1
+
     def __init_subclass__(cls, **kwargs):
         """Register preprocessor subclasses."""
         super().__init_subclass__(**kwargs)
-        cls.PROCESSORS[cls.NAME] = cls
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert Polars DataFrame to Pandas DataFrame."""
@@ -79,14 +81,38 @@ class PandasReportProcessor(ReportProcessor):
         """Convert Pandas DataFrame to Polars DataFrame."""
 
 
-class IdentityProcessor(ReportProcessor):
-    """Identity processor."""
+class ColumnRenamingProcessor(ReportProcessor):
+    """Rename columns in DataFrame."""
 
-    NAME = "Identity"
+    NAME = "ColumnRenaming"
+    PRIORITY = 0
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
-        """Return the report unchanged."""
-        return report
+        return report.rename({"id": "activity_submission_id"})
+
+
+class DropLegacyUserIdProcessor(ReportProcessor):
+    """Drop legacy user ID column."""
+
+    NAME = "DropLegacyUserId"
+    PRIORITY = 0
+
+    def _run(self, report: pl.DataFrame) -> pl.DataFrame:
+        return (
+            report.drop("legacy_user_id")
+            if "legacy_user_id" in report.columns
+            else report
+        )
+
+
+class ColumnCastingProcessor(ReportProcessor):
+    """Cast columns to expected types."""
+
+    NAME = "ColumnCasting"
+    PRIORITY = 0
+
+    def _run(self, report):
+        return report.with_columns(pl.col("rawScore").cast(pl.String))
 
 
 class DateTimeProcessor(ReportProcessor):
@@ -138,74 +164,7 @@ class OptionsStructProcessor(ReportProcessor):
         )
 
 
-class OptionsUnnestingProcessor(ReportProcessor):
-    """Parses options string to list of option structs.
-
-    Options column is str typed field with comma-separated options.
-    Parse to list of structs by splitting and matching on regex pattern with groups.
-
-    Input Columns: "parse_options"
-    Output Columns: "option_name", "option_value", "option_score"
-
-    Input:
-        "<name>: <value>, ..." or "<name>: <value> (score: <score>), ..."
-    Output:
-        [{"name": <name (str)>, "value": <value (int)>, "score": <score (int | null)>}, ...]
-    """
-
-    NAME = "UnnestedOptions"
-    PARSER = OptionsParser()
-    DEPENDENCIES = ["OptionsStruct"]
-
-    def _run(self, report: pl.DataFrame) -> pl.DataFrame:
-        """Convert options to strings."""
-        return (
-            report.select(
-                "version",
-                "activity_flow_id",
-                "activity_flow_name",
-                "activity_id",
-                "activity_name",
-                "item_id",
-                "item",
-                "prompt",
-                "options",
-                "parsed_options",
-            )
-            .explode(pl.col("parsed_options"))
-            .with_columns(
-                pl.col("parsed_options").struct.unnest().name.prefix("option_")
-            )
-            .unique()
-        )
-
-
-class DataDictionaryProcessor(ReportProcessor):
-    """Extract data dictionary columns from report and deduplicate.
-
-    Input Columns: "version", "activity_flow_id", "activity_flow_name",
-        "activity_id", "activity_name", "item_id", "item", "prompt", "options"
-    Output Columns: "version", "activity_flow_id", "activity_flow_name",
-        "activity_id", "activity_name", "item_id", "item", "prompt", "options"
-    """
-
-    NAME = "DataDictionary"
-
-    def _run(self, report: pl.DataFrame) -> pl.DataFrame:
-        return report.select(
-            "version",
-            "activity_flow_id",
-            "activity_flow_name",
-            "activity_id",
-            "activity_name",
-            "item_id",
-            "item",
-            "prompt",
-            "options",
-        ).unique()
-
-
-class StructResponseProcessor(ReportProcessor):
+class ResponseStructProcessor(ReportProcessor):
     """Convert response to struct using Lark.
 
     Input Columns: "response"
@@ -226,82 +185,117 @@ class StructResponseProcessor(ReportProcessor):
         )
 
 
-class UnnestingResponseProcessor(ReportProcessor):
-    """Convert Unnest and expand responses to have single value per cell.
+class SubscaleProcessor(ReportProcessor):
+    """Process subscale columns into response rows.
 
-    Input Columns: "parsed_response"
-    Output Columns: "response_type", "response_value", "response_score", "response_text", "response_file",
-        "response_date", "response_time", "response_time_range", "response_geo", "response_row_single",
-        "response_row_multi", "response_row_multi_values"
+    Warning: This must be run first because selecting the subscale columns relies on selecting all unknown columns.
     """
 
-    NAME = "UnnestedResponse"
-    DEPENDENCIES = ["ResponseStruct"]
-    PARSER = ResponseParser()
-    COLUMN_PREFIX = "response_"
+    NAME = "Subscale"
+    PRIORITY = 5
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
-        """Convert response to struct using Lark parser."""
-        return (
-            report.with_columns(
-                pl.col("parsed_response")
-                .struct.unnest()
-                .name.prefix(self.COLUMN_PREFIX)
+        """Process subscale columns."""
+        # TODO: Confirm this is valid check.
+        if "Final SubScale Score" not in report.columns:
+            return report
+        df_cols = {
+            "activity_submission_id",
+            "activity_flow_submission_id",
+            "activity_scheduled_time",
+            "activity_start_time",
+            "activity_end_time",
+            "flag",
+            "secret_user_id",
+            "userId",
+            "source_user_subject_id",
+            "source_user_secret_id",
+            "source_user_nickname",
+            "source_user_relation",
+            "source_user_tag",
+            "target_user_subject_id",
+            "target_user_secret_id",
+            "target_user_nickname",
+            "target_user_tag",
+            "input_user_subject_id",
+            "input_user_secret_id",
+            "input_user_nickname",
+            "activity_id",
+            "activity_name",
+            "activity_flow_id",
+            "activity_flow_name",
+            "item",
+            "item_id",
+            "response",
+            "prompt",
+            "options",
+            "version",
+            "rawScore",
+            "reviewing_id",
+            "event_id",
+            "timezone_offset",
+        }
+        id_cols = {
+            "activity_submission_id",
+            "activity_flow_submission_id",
+            "activity_scheduled_time",
+            "activity_start_time",
+            "activity_end_time",
+            "flag",
+            "secret_user_id",
+            "userId",
+            "source_user_subject_id",
+            "source_user_secret_id",
+            "source_user_nickname",
+            "source_user_relation",
+            "source_user_tag",
+            "target_user_subject_id",
+            "target_user_secret_id",
+            "target_user_nickname",
+            "target_user_tag",
+            "input_user_subject_id",
+            "input_user_secret_id",
+            "input_user_nickname",
+            "activity_id",
+            "activity_name",
+            "activity_flow_id",
+            "activity_flow_name",
+            "version",
+            "reviewing_id",
+            "event_id",
+            "timezone_offset",
+        }
+        response_cols = df_cols - id_cols
+        ss_value_cs = ~(
+            cs.by_name(id_cols)
+            | cs.by_name({"activity_score", "activity_score_text"})
+            | cs.starts_with("subscale_")
+        )
+
+        ssdf = (
+            report.select(pl.all().exclude(response_cols))
+            .rename(
+                {
+                    "Final SubScale Score": "activity_score",
+                    "Optional text for Final SubScale Score": "activity_score_text",
+                }
             )
-            # Expand value list to rows.
-            .explode(f"{self.COLUMN_PREFIX}value")
-            # Expand geo struct to lat/long columns.
             .with_columns(
-                pl.col(f"{self.COLUMN_PREFIX}geo")
-                .struct.unnest()
-                .name.prefix(f"{self.COLUMN_PREFIX}geo_")
+                pl.col("^Optional text for .*$").name.map(
+                    lambda n: f"subscale_text__{n[18:].replace(' ', '_')}"
+                ),
             )
-            # Expand matrix list to rows.
-            .explode(f"{self.COLUMN_PREFIX}matrix")
-            # Unnest matrix struct to columns.
+            .drop(cs.starts_with("Optional text for "))
             .with_columns(
-                pl.col(f"{self.COLUMN_PREFIX}matrix")
-                .struct.unnest()
-                .name.prefix(f"{self.COLUMN_PREFIX}matrix_")
+                ss_value_cs.name.map(lambda ss: f"subscale__{ss.replace(' ', '_')}")
             )
-            # Expand matrix value list to rows.
-            .explode(f"{self.COLUMN_PREFIX}matrix_value")
-            # Exclude temporary struct columns.
-            .select(
-                pl.exclude(f"{self.COLUMN_PREFIX}matrix", f"{self.COLUMN_PREFIX}geo")
+            .drop(ss_value_cs)
+            .unpivot(index=list(id_cols), variable_name="item", value_name="response")
+            .filter(pl.col("response").is_not_null())
+            .with_columns(item_id=None, prompt=None, options=None, rawScore=None)
+            .with_columns(
+                pl.col("item_id", "prompt", "options", "rawScore").cast(pl.String),
             )
         )
 
-
-class ScoredTypedData(ReportProcessor):
-    """Score typed data.
-
-    Input Columns: "version", "activity_flow_id", "activity_flow_name",
-        "activity_id", "activity_name", "item_id", "item", "prompt", "response_value"
-    Output Columns: "option_name", "option_score"
-    """
-
-    NAME = "ScoredTypedData"
-    DEPENDENCIES = ["UnnestedResponse"]
-    OPTION_INDEX_COLUMNS = [
-        "version",
-        "activity_flow_id",
-        "activity_flow_name",
-        "activity_id",
-        "activity_name",
-        "item_id",
-        "item",
-        "prompt",
-    ]
-
-    def _run(self, report: pl.DataFrame) -> pl.DataFrame:
-        """Score typed data."""
-        options = OptionsUnnestingProcessor().process(
-            report.select(self.OPTION_INDEX_COLUMNS + ["options"])
-        )
-        return report.join(
-            options,
-            how="left",
-            left_on=self.OPTION_INDEX_COLUMNS + ["response_value"],
-            right_on=self.OPTION_INDEX_COLUMNS + ["option_value"],
-        )
+        return pl.concat([report.select(df_cols), ssdf], how="align")
