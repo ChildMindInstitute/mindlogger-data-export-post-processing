@@ -105,6 +105,16 @@ class DropLegacyUserIdProcessor(ReportProcessor):
         )
 
 
+class ColumnCastingProcessor(ReportProcessor):
+    """Cast columns to expected types."""
+
+    NAME = "ColumnCasting"
+    PRIORITY = 0
+
+    def _run(self, report):
+        return report.with_columns(pl.col("rawScore").cast(pl.String))
+
+
 class DateTimeProcessor(ReportProcessor):
     """Convert timestamps to datetime."""
 

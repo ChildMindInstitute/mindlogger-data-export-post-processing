@@ -281,7 +281,7 @@ def test_subscale_processor():
             "prompt": ["prompt_1", "prompt_2"],
             "options": ["options_1", "options_2"],
             "version": ["version_1", "version_2"],
-            "rawScore": [3, 5],
+            "rawScore": ["3", "5"],
             "reviewing_id": ["reviewing_id_1", "reviewing_id_2"],
             "event_id": ["event_id_1", "event_id_2"],
             "timezone_offset": ["timezone_offset_1", "timezone_offset_2"],

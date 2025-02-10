@@ -20,9 +20,16 @@ def test_long_report(datafiles: Path):
     """Test long report."""
     data = MindloggerData.create(datafiles)
     long_report = data.report.drop(cs.ends_with("_dt") | cs.starts_with("parsed_"))
-    expected = pl.read_csv(datafiles / "long.csv")
+    expected = pl.read_csv(
+        datafiles / "long.csv",
+        schema_overrides={"rawScore": pl.String},
+    )
+
     assert_frame_equal(
-        long_report, expected, check_column_order=False, check_row_order=False
+        long_report,
+        expected,
+        check_column_order=False,
+        check_row_order=False,
     )
 
 
