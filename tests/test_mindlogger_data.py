@@ -142,6 +142,7 @@ def test_long_response():
         + [None] * 17,
         "response_null_value": [None] * 3 + [True] + [None] * 16,
         "response_value": [None] * 4 + [2, 1, 2, 3] + [None] * 12,
+        "response_value_index": [None] * 4 + [0, 0, 1, 2] + [None] * 12,
         "response_file": [None] * 8 + ["./path/to/file.mp4"] + [None] * 11,
         "response_date": [None] * 9 + [date(2021, 2, 1), date(2021, 5, 4)] + [None] * 9,
         "response_time": [None] * 11 + [time(12, 30)] + [None] * 8,
@@ -154,6 +155,9 @@ def test_long_response():
         + ["row1", "row2"]
         + ["row1", "row1", "row2", "row2"],  # [None] * 4,
         "response_matrix_value": [None] * 14 + [1, 2] + [1, 2, 3, 4],  # [None] * 4,
+        "response_matrix_value_index": [None] * 14
+        + [0, 0]
+        + [0, 1, 0, 1],  # [None] * 4,
         "response_type": [
             "raw_value",
             "text",
@@ -186,6 +190,7 @@ def test_long_response():
             "response_null_value": pl.Boolean,
             "response_file": pl.String,
             "response_value": pl.Int64,
+            "response_value_index": pl.Int64,
             "response_date": pl.Date,
             "response_time": pl.Time,
             "response_time_range": pl.Duration,
@@ -193,6 +198,7 @@ def test_long_response():
             "response_geo_longitude": pl.Float64,
             "response_matrix_row": pl.String,
             "response_matrix_value": pl.Int64,
+            "response_matrix_value_index": pl.Int64,
         },
     )
     expanded_report = MindloggerData.expand_responses(report).drop("parsed_response")

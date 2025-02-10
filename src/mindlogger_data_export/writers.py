@@ -24,7 +24,12 @@ class OutputWriter(Protocol):
         cls.WRITERS[cls.NAME] = cls
 
     def write(
-        self, output: NamedOutput, output_dir: Path, *, drop_null_columns: bool = False
+        self,
+        output: NamedOutput,
+        output_dir: Path,
+        *,
+        drop_null_columns: bool = False,
+        create_dir: bool = True,
     ) -> None:
         """Write data to output directory."""
         ...
@@ -46,6 +51,7 @@ class CsvWriter(OutputWriter):
         output_dir: Path,
         *,
         drop_null_columns: bool = False,
+        create_dir: bool = True,
     ) -> None:
         """Write data to output directory."""
         # Convert duration to milliseconds for CSV output.
@@ -66,6 +72,8 @@ class CsvWriter(OutputWriter):
             df = df.select([s.name for s in df if not (s.null_count() == df.height)])
 
         # Write to CSV.
+        if create_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
         df.write_csv((output_dir / output.name).with_suffix(".csv"))
 
 
@@ -80,6 +88,7 @@ class ParquetWriter(OutputWriter):
         output_dir: Path,
         *,
         drop_null_columns: bool = False,
+        create_dir: bool = True,
     ) -> None:
         """Write data to output directory."""
         df = output.output.clone()
@@ -87,4 +96,6 @@ class ParquetWriter(OutputWriter):
             df = df.select([s.name for s in df if not (s.null_count() == df.height)])
 
         # Write to Parquet.
+        if create_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
         df.write_parquet((output_dir / output.name).with_suffix(".parquet"))

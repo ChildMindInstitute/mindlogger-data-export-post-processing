@@ -72,10 +72,10 @@ def test_date_preprocessor(field_name, timestamps, expected):
         pytest.param(
             "value: null", {"type": "null_value", "null_value": True}, id="raw_value"
         ),
-        pytest.param("value: 2", {"type": "value", "value": [2]}, id="value"),
+        pytest.param("value: 2", {"type": "value", "value": ["2"]}, id="value"),
         pytest.param(
             "value: 1, 2, 3",
-            {"type": "value", "value": [1, 2, 3]},
+            {"type": "value", "value": ["1", "2", "3"]},
             id="multivalue",
         ),
         pytest.param(
@@ -109,8 +109,8 @@ def test_date_preprocessor(field_name, timestamps, expected):
             {
                 "type": "matrix",
                 "matrix": [
-                    {"row": "row1", "value": [1]},
-                    {"row": "row2", "value": [2]},
+                    {"row": "row1", "value": ["1"]},
+                    {"row": "row2", "value": ["2"]},
                 ],
             },
             id="singleperrow",
@@ -120,8 +120,8 @@ def test_date_preprocessor(field_name, timestamps, expected):
             {
                 "type": "matrix",
                 "matrix": [
-                    {"row": "row1", "value": [1, 2]},
-                    {"row": "row2", "value": [3, 4]},
+                    {"row": "row1", "value": ["1", "2"]},
+                    {"row": "row2", "value": ["3", "4"]},
                 ],
             },
             id="multiperrow",
@@ -169,8 +169,8 @@ def test_response_preprocessor_single_row(response_field, expected):
                 {"type": "text", "text": "Some text here"},
                 {"type": "text", "text": "Some multiline\ntext here"},
                 {"type": "null_value", "null_value": True},
-                {"type": "value", "value": [2]},
-                {"type": "value", "value": [1, 2, 3]},
+                {"type": "value", "value": ["2"]},
+                {"type": "value", "value": ["1", "2", "3"]},
                 {"type": "file", "file": "./path/to/file.mp4"},
                 {"type": "date", "date": date(2021, 2, 1)},
                 {"type": "date", "date": date(2021, 5, 4)},
@@ -180,15 +180,15 @@ def test_response_preprocessor_single_row(response_field, expected):
                 {
                     "type": "matrix",
                     "matrix": [
-                        {"row": "row1", "value": [1]},
-                        {"row": "row2", "value": [2]},
+                        {"row": "row1", "value": ["1"]},
+                        {"row": "row2", "value": ["2"]},
                     ],
                 },
                 {
                     "type": "matrix",
                     "matrix": [
-                        {"row": "row1", "value": [1, 2]},
-                        {"row": "row2", "value": [3, 4]},
+                        {"row": "row1", "value": ["1", "2"]},
+                        {"row": "row2", "value": ["3", "4"]},
                     ],
                 },
             ],

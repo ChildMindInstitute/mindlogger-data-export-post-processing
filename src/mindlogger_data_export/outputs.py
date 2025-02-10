@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import polars as pl
+import polars.selectors as cs
 
 from .mindlogger import MindloggerData
 
@@ -49,8 +50,62 @@ class WideDataFormat(Output):
 
     NAME = "wide"
 
+    # index_columns = [ # noqa: ERA001
+    #     "userId",
+    #     "secret_user_id",
+    #     "source_user_secret_id",
+    #     "target_user_secret_id",
+    #     "input_user_secret_id",
+    #     "activity_start_time_dt",
+    #     "activity_end_time_dt",
+    #     "activity_scheduled_time_dt",
+    #     "activity_flow_id",
+    #     "activity_flow_name",
+    #     "activity_id",
+    #     "event_id",
+    #     "version",
+    # ] # noqa: ERA001
+
+    index_columns = [
+        "userId",
+        "secret_user_id",
+        "source_user_secret_id",
+        "target_user_secret_id",
+        "input_user_secret_id",
+        "activity_start_time_dt",
+        "activity_end_time_dt",
+        "activity_scheduled_time_dt",
+        "activity_flow_id",
+        "activity_flow_name",
+        "activity_id",
+        "event_id",
+        "version",
+    ]
+
+    pivot_columns = [
+        "activity_name",
+        "item",
+        "item_id",
+        "response_value_index",
+        "response_matrix_row",
+        "response_matrix_value_index",
+        "response_type",
+    ]
+
     def _format(self, data: MindloggerData) -> list[NamedOutput]:
-        return [NamedOutput("wide_data", data.report)]
+        return [
+            NamedOutput(
+                "wide_data",
+                data.long_response_report.with_columns(
+                    pl.col(self.pivot_columns).fill_null("")
+                ).pivot(
+                    on=self.pivot_columns,
+                    index=self.index_columns,
+                    values=cs.starts_with("response_"),
+                    sort_columns=True,
+                ),
+            )
+        ]
 
 
 class LongDataFormat(Output):
@@ -78,7 +133,9 @@ class DataDictionaryFormat(Output):
                     "item",
                     "prompt",
                     "options",
-                ),
+                )
+                .unique()
+                .filter(pl.col("item_id").is_not_null()),
             )
         ]
 
@@ -124,7 +181,9 @@ class ScoredResponsesFormat(Output):
             NamedOutput(
                 "scored_responses",
                 data.long_report.filter(  # Filter out rows where option_score does not match response_value.
-                    pl.col("option_value").eq_missing(pl.col("response_value"))
+                    pl.col("option_value")
+                    .cast(pl.String)
+                    .eq_missing(pl.col("response_value"))
                 ),
             )
         ]

@@ -16,6 +16,9 @@ from mindlogger_data_export.parsers import (
     [
         pytest.param("10", {"type": "raw_value", "raw_value": "10"}, id="raw_value"),
         pytest.param(
+            "10.456", {"type": "raw_value", "raw_value": "10.456"}, id="raw_value"
+        ),
+        pytest.param(
             "text: Some text here",
             {"type": "text", "text": "Some text here"},
             id="text",
@@ -28,16 +31,29 @@ from mindlogger_data_export.parsers import (
         pytest.param(
             "value: null", {"type": "null_value", "null_value": True}, id="raw_value"
         ),
-        pytest.param("value: 2", {"type": "value", "value": [2]}, id="value"),
+        pytest.param("value: 2", {"type": "value", "value": ["2"]}, id="value"),
+        pytest.param(
+            "value: 0.95", {"type": "value", "value": ["0.95"]}, id="value_frac"
+        ),
         pytest.param(
             "value: 1, 2, 3",
-            {"type": "value", "value": [1, 2, 3]},
+            {"type": "value", "value": ["1", "2", "3"]},
             id="multivalue",
+        ),
+        pytest.param(
+            "abcd-b3j5.mp4",
+            {"type": "file", "file": "abcd-b3j5.mp4"},
+            id="file",
         ),
         pytest.param(
             "./path/to/file.mp4",
             {"type": "file", "file": "./path/to/file.mp4"},
-            id="file",
+            id="filepath",
+        ),
+        pytest.param(
+            "value: 1 | text: Some text here",
+            {"type": "value_with_text", "value": ["1"], "text": "Some text here"},
+            id="value_with_text",
         ),
         pytest.param(
             "date: 1/2/21", {"type": "date", "date": date(2021, 2, 1)}, id="date"
@@ -59,17 +75,27 @@ from mindlogger_data_export.parsers import (
             id="timerange",
         ),
         pytest.param(
+            "time_range: from (hr 16, min 0) / to (hr 16, min 2)",
+            {"type": "time_range", "time_range": timedelta(hours=0, minutes=2)},
+            id="timerange_parens",
+        ),
+        pytest.param(
             "geo: lat 40.7128 long -74.0060",
             {"type": "geo", "geo": {"latitude": 40.7128, "longitude": -74.0060}},
             id="geo",
+        ),
+        pytest.param(
+            "geo: lat (40.7128) / long (-74.0060)",
+            {"type": "geo", "geo": {"latitude": 40.7128, "longitude": -74.0060}},
+            id="geo_parens",
         ),
         pytest.param(
             "row1: 1\nrow2: 2",
             {
                 "type": "matrix",
                 "matrix": [
-                    {"row": "row1", "value": [1]},
-                    {"row": "row2", "value": [2]},
+                    {"row": "row1", "value": ["1"]},
+                    {"row": "row2", "value": ["2"]},
                 ],
             },
             id="singleperrow",
@@ -79,11 +105,22 @@ from mindlogger_data_export.parsers import (
             {
                 "type": "matrix",
                 "matrix": [
-                    {"row": "row1", "value": [1, 2]},
-                    {"row": "row2", "value": [3, 4]},
+                    {"row": "row1", "value": ["1", "2"]},
+                    {"row": "row2", "value": ["3", "4"]},
                 ],
             },
             id="multiperrow",
+        ),
+        pytest.param(
+            "row1: c1, c2\nrow2: c3, c4",
+            {
+                "type": "matrix",
+                "matrix": [
+                    {"row": "row1", "value": ["c1", "c2"]},
+                    {"row": "row2", "value": ["c3", "c4"]},
+                ],
+            },
+            id="multiperrow_str",
         ),
     ],
 )

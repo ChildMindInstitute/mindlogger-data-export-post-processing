@@ -81,22 +81,24 @@ class MindloggerData:
             UserType.ACCOUNT: self.account_users,
         }
 
-    @cached_property
+    @property
     def data_dictionary(self) -> pl.DataFrame:
         """Return unique items in report."""
-        self._report_frame.select(
-            "version",
-            "activity_flow_id",
-            "activity_flow_name",
-            "activity_id",
-            "activity_name",
-            "item_id",
-            "item",
-            "prompt",
-            "options",
-        ).unique()
+        pl.DataFrame(
+            self._report_frame.select(
+                "version",
+                "activity_flow_id",
+                "activity_flow_name",
+                "activity_id",
+                "activity_name",
+                "item_id",
+                "item",
+                "prompt",
+                "options",
+            ).unique()
+        )
 
-    @cached_property
+    @property
     def data_dictionary_pd(self) -> pd.DataFrame:
         """Return unique items in report in Pandas format."""
         return self.data_dictionary.to_pandas()
@@ -115,31 +117,36 @@ class MindloggerData:
     @staticmethod
     def expand_responses(df: pl.DataFrame) -> pl.DataFrame:
         """Expand responses struct to columns/rows."""
-        column_prefix = "response_"
         return (
             df.with_columns(
-                pl.col("parsed_response").struct.unnest().name.prefix(column_prefix)
+                pl.col("parsed_response").struct.unnest().name.prefix("response_")
             )
             # Expand value list to rows.
-            .explode(f"{column_prefix}value")
+            .with_columns(
+                response_value_index=pl.int_ranges(pl.col("response_value").list.len())
+            )
+            .explode("response_value", "response_value_index")
             # Expand geo struct to lat/long columns.
             .with_columns(
-                pl.col(f"{column_prefix}geo")
-                .struct.unnest()
-                .name.prefix(f"{column_prefix}geo_")
+                pl.col("response_geo").struct.unnest().name.prefix("response_geo_")
             )
             # Expand matrix list to rows.
-            .explode(f"{column_prefix}matrix")
+            .explode("response_matrix")
             # Unnest matrix struct to columns.
             .with_columns(
-                pl.col(f"{column_prefix}matrix")
+                pl.col("response_matrix")
                 .struct.unnest()
-                .name.prefix(f"{column_prefix}matrix_")
+                .name.prefix("response_matrix_")
             )
             # Expand matrix value list to rows.
-            .explode(f"{column_prefix}matrix_value")
+            .with_columns(
+                response_matrix_value_index=pl.int_ranges(
+                    pl.col("response_matrix_value").list.len()
+                )
+            )
+            .explode("response_matrix_value", "response_matrix_value_index")
             # Exclude temporary struct columns.
-            .select(pl.exclude(f"{column_prefix}matrix", f"{column_prefix}geo"))
+            .select(pl.exclude("response_matrix", "response_geo"))
         )
 
     def _users(self, user_type: UserType) -> list[MindloggerUser]:
@@ -190,10 +197,8 @@ class MindloggerData:
             for proc in sorted(ReportProcessor.PROCESSORS, key=lambda x: x.PRIORITY):
                 LOG.debug("Running processor %s...", proc.NAME)
                 report = proc().process(report)
-        except pl.exceptions.ComputeError:
-            raise FileNotFoundError(
-                f"No report CSV files found in {input_dir}."
-            ) from None
+        except pl.exceptions.ComputeError as e:
+            raise FileNotFoundError(f"No report CSV files found in {input_dir}.") from e
 
         return report
 

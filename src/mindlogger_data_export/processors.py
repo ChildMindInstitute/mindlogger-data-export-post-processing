@@ -91,6 +91,20 @@ class ColumnRenamingProcessor(ReportProcessor):
         return report.rename({"id": "activity_submission_id"})
 
 
+class DropLegacyUserIdProcessor(ReportProcessor):
+    """Drop legacy user ID column."""
+
+    NAME = "DropLegacyUserId"
+    PRIORITY = 0
+
+    def _run(self, report: pl.DataFrame) -> pl.DataFrame:
+        return (
+            report.drop("legacy_user_id")
+            if "legacy_user_id" in report.columns
+            else report
+        )
+
+
 class DateTimeProcessor(ReportProcessor):
     """Convert timestamps to datetime."""
 
@@ -172,6 +186,9 @@ class SubscaleProcessor(ReportProcessor):
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Process subscale columns."""
+        # TODO: Confirm this is valid check.
+        if "Final SubScale Score" not in report.columns:
+            return report
         df_cols = {
             "activity_submission_id",
             "activity_flow_submission_id",
@@ -266,10 +283,8 @@ class SubscaleProcessor(ReportProcessor):
             .unpivot(index=id_cols, variable_name="item", value_name="response")
             .filter(pl.col("response").is_not_null())
             .with_columns(item_id=None, prompt=None, options=None, rawScore=None)
-            .select(
-                pl.all().exclude("item_id", "prompt", "options", "rawScore"),
-                pl.col("item_id", "prompt", "options").cast(pl.String),
-                pl.col("rawScore").cast(pl.Int64),
+            .with_columns(
+                pl.col("item_id", "prompt", "options", "rawScore").cast(pl.String),
             )
         )
 
