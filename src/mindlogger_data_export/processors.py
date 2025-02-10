@@ -285,12 +285,12 @@ class SubscaleProcessor(ReportProcessor):
                     lambda n: f"subscale_text__{n[18:].replace(' ', '_')}"
                 ),
             )
-            .drop(pl.col("^Optional text for .*$"))
+            .drop(cs.starts_with("Optional text for "))
             .with_columns(
                 ss_value_cs.name.map(lambda ss: f"subscale__{ss.replace(' ', '_')}")
             )
             .drop(ss_value_cs)
-            .unpivot(index=id_cols, variable_name="item", value_name="response")
+            .unpivot(index=list(id_cols), variable_name="item", value_name="response")
             .filter(pl.col("response").is_not_null())
             .with_columns(item_id=None, prompt=None, options=None, rawScore=None)
             .with_columns(

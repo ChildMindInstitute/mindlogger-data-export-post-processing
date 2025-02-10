@@ -7,8 +7,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
-import polars as pl
-
 LOG = logging.getLogger(__name__)
 
 
@@ -71,7 +69,7 @@ class MindloggerUser:
     relation: str | None = None
 
     @classmethod
-    def from_source_struct(cls, struct: pl.Series) -> MindloggerUser:
+    def from_source_struct(cls, struct: dict[str, str]) -> MindloggerUser:
         """Create MindloggerUser object from source struct."""
         return cls(
             UserType.SOURCE,
@@ -83,7 +81,7 @@ class MindloggerUser:
         )
 
     @classmethod
-    def from_target_struct(cls, struct: pl.Series) -> MindloggerUser:
+    def from_target_struct(cls, struct: dict[str, str]) -> MindloggerUser:
         """Create MindloggerUser object from target struct."""
         return cls(
             UserType.TARGET,
@@ -94,7 +92,7 @@ class MindloggerUser:
         )
 
     @classmethod
-    def from_input_struct(cls, struct: pl.Series) -> MindloggerUser:
+    def from_input_struct(cls, struct: dict[str, str]) -> MindloggerUser:
         """Create MindloggerUser object from input struct."""
         return cls(
             UserType.INPUT,
@@ -104,7 +102,7 @@ class MindloggerUser:
         )
 
     @classmethod
-    def from_account_struct(cls, struct: pl.Series) -> MindloggerUser:
+    def from_account_struct(cls, struct: dict[str, str]) -> MindloggerUser:
         """Create MindloggerUser object from account struct."""
         return cls(
             UserType.ACCOUNT,
@@ -115,7 +113,7 @@ class MindloggerUser:
     @classmethod
     def from_struct_factory(
         cls, user_type: UserType
-    ) -> Callable[[pl.Struct], MindloggerUser]:
+    ) -> Callable[[dict[str, str]], MindloggerUser]:
         """Create MindloggerUser object from struct."""
         match user_type:
             case UserType.SOURCE:

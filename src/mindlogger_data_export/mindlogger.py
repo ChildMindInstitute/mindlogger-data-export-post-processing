@@ -84,7 +84,7 @@ class MindloggerData:
     @property
     def data_dictionary(self) -> pl.DataFrame:
         """Return unique items in report."""
-        pl.DataFrame(
+        return pl.DataFrame(
             self._report_frame.select(
                 "version",
                 "activity_flow_id",
