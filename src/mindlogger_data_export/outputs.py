@@ -45,29 +45,14 @@ class Output(Protocol):
         return {k: v.__doc__ for k, v in cls.TYPES.items() if v.__doc__}
 
 
-class WideDataFormat(Output):
+class WideActivityDataFormat(Output):
     """Write wide data to CSV."""
 
-    NAME = "wide"
-
-    # index_columns = [ # noqa: ERA001
-    #     "userId",
-    #     "secret_user_id",
-    #     "source_user_secret_id",
-    #     "target_user_secret_id",
-    #     "input_user_secret_id",
-    #     "activity_start_time_dt",
-    #     "activity_end_time_dt",
-    #     "activity_scheduled_time_dt",
-    #     "activity_flow_id",
-    #     "activity_flow_name",
-    #     "activity_id",
-    #     "event_id",
-    #     "version",
-    # ] # noqa: ERA001
+    NAME = "wide-activity"
 
     index_columns = [
         "userId",
+        "activity_submission_id",
         "secret_user_id",
         "source_user_secret_id",
         "target_user_secret_id",

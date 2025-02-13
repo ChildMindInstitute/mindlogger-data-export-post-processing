@@ -25,10 +25,13 @@ class ResponseTransformer(Transformer):
         "time_range": None,
         "geo": None,
         "matrix": None,
+        "optional_text": None,
     }
 
     @v_args(inline=True)
-    def start(self, value):  # noqa: D102
+    def start(self, value, optional_text=None):  # noqa: D102
+        if optional_text:
+            value = value | optional_text
         return self.DEFAULT_SCHEMA | value
 
     def padded_two_digit(self, items):  # noqa: D102
@@ -72,16 +75,16 @@ class ResponseTransformer(Transformer):
         return {"type": "text", "text": text.value}
 
     @v_args(inline=True)
+    def optional_text(self, text):  # noqa: D102
+        return {"optional_text": text.value}
+
+    @v_args(inline=True)
     def null_resp(self):  # noqa: D102
         return {"type": "null_value", "null_value": True}
 
     @v_args(inline=True)
-    def multivalue_resp(self, ilist):  # noqa: D102
-        return {"type": "value", "value": ilist}
-
-    @v_args(inline=True)
-    def value_with_text_resp(self, ilist, text):  # noqa: D102
-        return {"type": "value_with_text", "value": ilist, "text": text}
+    def multivalue_resp(self, vlist):  # noqa: D102
+        return {"type": "value", "value": vlist}
 
     @v_args(inline=True)
     def row_kv(self, key, row_value):  # noqa: D102
@@ -116,27 +119,17 @@ class ResponseParser:
     """Parse response string to dict using Lark grammar."""
 
     RESPONSE_GRAMMAR = r"""
-    start: text_resp
-        | null_resp
-        | multivalue_resp
-        | value_with_text_resp
-        | date_resp
-        | time_resp
-        | time_range_resp
-        | geo_resp
-        | matrix_resp
-        | file_resp
-        | raw_value_resp
+    start: text_resp | null_resp | file_resp | raw_value_resp | matrix_resp
+        | ( ( multivalue_resp | date_resp | time_resp | time_range_resp | geo_resp ) [ optional_text ] )
 
     // Matches text response in "text: <text>" format, including multi-line text.
     text_resp.10: "text:" _WSI _text
     _text: /.+/s
 
+    optional_text: _WSI "| text:" _WSI _text
+
     // Matches null response in "value: null" format.
     null_resp.20: "value: null"
-
-    // Matches value with text.
-    value_with_text_resp.10: "value:" _WSI vlist _WSI "|" _WSI "text:" _WSI _text
 
     // Matches single or multiple values in "value: <value>, <value>, ..." format.
     multivalue_resp.10: "value:" _WSI vlist
@@ -225,6 +218,7 @@ class ResponseParser:
                 "matrix": pl.List(
                     pl.Struct({"row": pl.String, "value": pl.List(pl.String)})
                 ),
+                "optional_text": pl.String,
             }
         )
 
