@@ -70,7 +70,7 @@ def test_date_preprocessor(field_name, timestamps, expected):
             id="text_multiline",
         ),
         pytest.param(
-            "value: null", {"type": "null_value", "null_value": True}, id="raw_value"
+            "value: null", {"type": "null_value", "null_value": True}, id="null_value"
         ),
         pytest.param("value: 2", {"type": "value", "value": ["2"]}, id="value"),
         pytest.param(
@@ -131,7 +131,7 @@ def test_date_preprocessor(field_name, timestamps, expected):
 def test_response_preprocessor_single_row(response_field, expected):
     """Test ResponsePreprocessor."""
     preprocessor = ResponseStructProcessor()
-    schema = ResponseTransformer().DEFAULT_SCHEMA
+    schema = ResponseTransformer.DEFAULT_SCHEMA
     responses = [response_field]
     processed_expected = schema | expected
 

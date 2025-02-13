@@ -52,7 +52,11 @@ from mindlogger_data_export.parsers import (
         ),
         pytest.param(
             "value: 1 | text: Some text here",
-            {"type": "value_with_text", "value": ["1"], "text": "Some text here"},
+            {
+                "type": "value",
+                "value": ["1"],
+                "optional_text": "Some text here",
+            },
             id="value_with_text",
         ),
         pytest.param(
