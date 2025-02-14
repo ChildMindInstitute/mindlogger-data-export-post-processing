@@ -34,7 +34,7 @@ def test_mindlogger_data_create_not_a_directory_raises_error(tmp_path: Path):
 
 def test_mindlogger_data_create_empty_raises_error(tmp_path: Path):
     """MindloggerData.create should raise error for empty directory."""
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(ValueError):
         MindloggerData.create(tmp_path)
 
 
