@@ -193,12 +193,19 @@ class MindloggerData:
 
         # Read report files.
         try:
-            report = pl.read_csv(input_dir / MINDLOGGER_REPORT_PATTERN)
+            report = pl.concat(
+                (
+                    pl.read_csv(f, infer_schema_length=None)
+                    for f in input_dir.glob(MINDLOGGER_REPORT_PATTERN)
+                ),
+                how="diagonal_relaxed",
+            )
             for proc in sorted(ReportProcessor.PROCESSORS, key=lambda x: x.PRIORITY):
                 LOG.debug("Running processor %s...", proc.NAME)
                 report = proc().process(report)
-        except pl.exceptions.ComputeError as e:
-            raise FileNotFoundError(f"No report CSV files found in {input_dir}.") from e
+        except pl.exceptions.ComputeError:
+            LOG.exception("Error reading report files")
+            raise
 
         return report
 
