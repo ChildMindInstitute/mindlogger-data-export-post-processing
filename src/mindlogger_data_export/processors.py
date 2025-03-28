@@ -81,16 +81,6 @@ class PandasReportProcessor(ReportProcessor):
         """Convert Pandas DataFrame to Polars DataFrame."""
 
 
-class ColumnRenamingProcessor(ReportProcessor):
-    """Rename columns in DataFrame."""
-
-    NAME = "ColumnRenaming"
-    PRIORITY = 0
-
-    def _run(self, report: pl.DataFrame) -> pl.DataFrame:
-        return report.rename({"id": "activity_submission_id"})
-
-
 class DropLegacyUserIdProcessor(ReportProcessor):
     """Drop legacy user ID column."""
 
@@ -153,7 +143,7 @@ class OptionsStructProcessor(ReportProcessor):
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert options to strings."""
         return report.with_columns(
-            parsed_options=pl.col("options")
+            parsed_options=pl.col("item_response_options")
             .str.strip_chars()
             .map_elements(
                 self.PARSER.parse,
@@ -176,7 +166,7 @@ class ResponseStructProcessor(ReportProcessor):
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         return report.with_columns(
-            parsed_response=pl.col("response")
+            parsed_response=pl.col("item_response")
             .str.strip_chars()
             .map_elements(
                 self.PARSER.parse,
@@ -202,7 +192,7 @@ class SubscaleProcessor(ReportProcessor):
         df_cols = {
             "activity_submission_id",
             "activity_flow_submission_id",
-            "activity_scheduled_time",
+            "activity_schedule_start_time",
             "activity_start_time",
             "activity_end_time",
             "flag",
@@ -238,7 +228,7 @@ class SubscaleProcessor(ReportProcessor):
         id_cols = {
             "activity_submission_id",
             "activity_flow_submission_id",
-            "activity_scheduled_time",
+            "activity_schedule_start_time",
             "activity_start_time",
             "activity_end_time",
             "flag",

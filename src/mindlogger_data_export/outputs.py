@@ -53,23 +53,23 @@ class WideActivityDataFormat(Output):
     index_columns = [
         "userId",
         "activity_submission_id",
-        "secret_user_id",
-        "source_user_secret_id",
-        "target_user_secret_id",
-        "input_user_secret_id",
+        "source_secret_id",
+        "target_secret_id",
+        "input_secret_id",
         "activity_start_time_dt",
         "activity_end_time_dt",
-        "activity_scheduled_time_dt",
+        "activity_schedule_start_time_dt",
         "activity_flow_id",
         "activity_flow_name",
         "activity_id",
-        "event_id",
-        "version",
+        # "event_id",
+        "activity_flow_submission_id",
+        "applet_version",
     ]
 
     pivot_columns = [
         "activity_name",
-        "item",
+        "item_name",
         "item_id",
         "response_value_index",
         "response_matrix_row",
@@ -109,15 +109,15 @@ class DataDictionaryFormat(Output):
             NamedOutput(
                 "data_dictionary",
                 data.report.select(
-                    "version",
+                    "applet_version",
                     "activity_flow_id",
                     "activity_flow_name",
                     "activity_id",
                     "activity_name",
                     "item_id",
-                    "item",
-                    "prompt",
-                    "options",
+                    "item_name",
+                    "item_prompt",
+                    "item_response_options",
                 )
                 .unique()
                 .filter(pl.col("item_id").is_not_null()),
@@ -135,15 +135,15 @@ class OptionsFormat(Output):
             NamedOutput(
                 "options",
                 data.report.select(
-                    "version",
+                    "applet_version",
                     "activity_flow_id",
                     "activity_flow_name",
                     "activity_id",
                     "activity_name",
                     "item_id",
-                    "item",
-                    "prompt",
-                    "options",
+                    "item_name",
+                    "item_prompt",
+                    "item_response_options",
                     "parsed_options",
                 )
                 .unique()

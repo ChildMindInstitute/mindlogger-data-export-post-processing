@@ -14,7 +14,7 @@ from .processors import ReportProcessor
 
 LOG = logging.getLogger(__name__)
 
-MINDLOGGER_REPORT_PATTERN = "report*.csv"
+MINDLOGGER_REPORT_PATTERN = "*responses*.csv"
 
 
 class MindloggerData:
@@ -47,9 +47,7 @@ class MindloggerData:
     @property
     def long_report(self) -> pl.DataFrame:
         """Get report DataFrame with one response value per row."""
-        return MindloggerData.expand_options(
-            MindloggerData.expand_responses(self.report)
-        )
+        return MindloggerData.expand_options(self.long_response_report)
 
     @cached_property
     def input_users(self) -> list[MindloggerUser]:
