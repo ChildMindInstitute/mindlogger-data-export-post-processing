@@ -204,22 +204,38 @@ class ResponseParser:
     def datatype(self):
         """Return Polars schema for response types."""
         return pl.Struct(
-            {
-                "type": pl.String,
-                "raw_value": pl.String,
-                "null_value": pl.Boolean,
-                "value": pl.List(pl.String),
-                "text": pl.String,
-                "file": pl.String,
-                "date": date,
-                "time": time,
-                "time_range": timedelta,
-                "geo": pl.Struct({"latitude": pl.Float64, "longitude": pl.Float64}),
-                "matrix": pl.List(
-                    pl.Struct({"row": pl.String, "value": pl.List(pl.String)})
+            [
+                pl.Field("type", pl.String),
+                pl.Field("raw_value", pl.String),
+                pl.Field("null_value", pl.Boolean),
+                pl.Field("value", pl.List(pl.String)),
+                pl.Field("text", pl.String),
+                pl.Field("file", pl.String),
+                pl.Field("date", pl.Date),
+                pl.Field("time", pl.Time),
+                pl.Field("time_range", pl.Duration),
+                pl.Field(
+                    "geo",
+                    pl.Struct(
+                        [
+                            pl.Field("latitude", pl.Float64),
+                            pl.Field("longitude", pl.Float64),
+                        ]
+                    ),
                 ),
-                "optional_text": pl.String,
-            }
+                pl.Field(
+                    "matrix",
+                    pl.List(
+                        pl.Struct(
+                            [
+                                pl.Field("row", pl.String),
+                                pl.Field("value", pl.List(pl.String)),
+                            ]
+                        )
+                    ),
+                ),
+                pl.Field("optional_text", pl.String),
+            ]
         )
 
     def parse(self, response: str) -> dict[str, Any]:
@@ -292,11 +308,11 @@ class OptionsParser:
 
     // Matches option in "<name>: <value>" format.
     value_options.10: _sep{option, _CSV}
-    option: name ":" _WSI? INT
+    option: name _WSI? ":" _WSI? INT
 
-    // Value is any non-empty alphanumeric string
-    name: /\w+/
-    _CSV: "," _WSI
+    // Value is any string with 0 or 1 ':' characters.
+    name: /[^:]+/ | /[^:]+:[^:]+/
+    _CSV: "," _WSI?
     _sep{x, sep}: x (sep x)*
 
     %import common.INT
@@ -310,8 +326,11 @@ class OptionsParser:
     def __init__(self):
         """Initialize ResponseParser."""
         self._transformer = OptionsTransformer()
-        self._parser = Lark(self.OPTIONS_GRAMMAR)
+        self._parser = Lark(self.OPTIONS_GRAMMAR, parser="earley")
 
-    def parse(self, response: str) -> dict[str, Any]:
+    def parse(self, response: str) -> list[dict[str, Any]] | None:
         """Parse response string to dict."""
-        return self._transformer.transform(self._parser.parse(response))
+        try:
+            return self._transformer.transform(self._parser.parse(response))
+        except Exception:
+            return None

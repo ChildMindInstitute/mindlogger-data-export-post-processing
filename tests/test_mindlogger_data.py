@@ -46,7 +46,7 @@ def test_mindlogger_source_users(datafiles: Path):
     source_users = mindlogger_data.source_users
     assert len(source_users) == 1
     assert source_users[0].user_type == UserType.SOURCE
-    assert source_users[0].subject_id == "ab64e77e-60b0-4725-8d93-079cceb8fc03"
+    assert source_users[0].id == "ab64e77e-60b0-4725-8d93-079cceb8fc03"
 
 
 @WITH_REPORT
@@ -57,7 +57,7 @@ def test_mindlogger_target_users(datafiles: Path):
     target_users = mindlogger_data.target_users
     assert len(target_users) == 1
     assert target_users[0].user_type == UserType.TARGET
-    assert target_users[0].subject_id == "ab64e77e-60b0-4725-8d93-079cceb8fc03"
+    assert target_users[0].id == "ab64e77e-60b0-4725-8d93-079cceb8fc03"
 
 
 @WITH_REPORT
@@ -68,7 +68,7 @@ def test_mindlogger_input_users(datafiles: Path):
     input_users = mindlogger_data.input_users
     assert len(input_users) == 1
     assert input_users[0].user_type == UserType.INPUT
-    assert input_users[0].subject_id == "ab64e77e-60b0-4725-8d93-079cceb8fc03"
+    assert input_users[0].id == "ab64e77e-60b0-4725-8d93-079cceb8fc03"
 
 
 @WITH_REPORT
@@ -79,7 +79,7 @@ def test_mindlogger_account_users(datafiles: Path):
     account_users = mindlogger_data.account_users
     assert len(account_users) == 1
     assert account_users[0].user_type == UserType.ACCOUNT
-    assert account_users[0].subject_id == "645e8cc0-a67a-c10f-93b4-50e000000000"
+    assert account_users[0].id == "645e8cc0-a67a-c10f-93b4-50e000000000"
 
 
 def test_long_response():

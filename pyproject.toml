@@ -25,6 +25,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "jupyter>=1.1.1",
+    "marimo>=0.13.15",
     "mypy>=1.15.0",
     "pyarrow>=19.0.0",
     "pytest>=8.3.4",
@@ -83,7 +84,7 @@ extend-ignore = [
 
 [tool.ruff.lint.extend-per-file-ignores]
 "tests/**/*.py" = ["S101", "SLF001", "INP001", "D103"]
-"scripts/*.py" = ["T20"]
+"scripts/*.py" = ["T20", "D100", "N803", "B018", "ERA001"]
 "scripts/*.ipynb" = [
     "C901",
     "D103",
