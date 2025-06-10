@@ -73,6 +73,7 @@ extend-select = [
 extend-ignore = [
     "COM812",
     "COM819",
+    "D107",
     "D203",
     "D206",
     "D213",
@@ -83,7 +84,7 @@ extend-ignore = [
 ]
 
 [tool.ruff.lint.extend-per-file-ignores]
-"tests/**/*.py" = ["S101", "SLF001", "INP001", "D103"]
+"tests/**/*.py" = ["S101", "SLF001", "INP001", "D103", "ERA001"]
 "scripts/*.py" = ["T20", "D100", "N803", "B018", "ERA001"]
 "scripts/*.ipynb" = [
     "C901",

@@ -51,6 +51,9 @@ class OutputConfig:
     )
     """Logging level for the tool."""
 
+    extra: Annotated[dict[str, str], arg(aliases=["-e"])] = field(default_factory=dict)
+    """Additional parameters to be used for output-specific side-inputs, etc."""
+
     timezone: str = "America/New_York"
     """Timezone to which datetimes will be converted."""
 

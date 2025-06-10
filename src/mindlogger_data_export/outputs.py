@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from abc import ABC
 from dataclasses import dataclass
-from typing import Protocol
+from pathlib import Path
 
 import polars as pl
 import polars.selectors as cs
@@ -19,12 +20,24 @@ class NamedOutput:
     output: pl.DataFrame
 
 
-class Output(Protocol):
+class MissingExtraArgumentError(Exception):
+    """Error class for output that requires an extra argument."""
+
+
+class OutputGenerationError(Exception):
+    """Generic error encountered in output generation."""
+
+
+class Output(ABC):
     """Protocol for output writers."""
 
     NAME: str
 
     TYPES: dict[str, type[Output]] = {}
+
+    def __init__(self, extra: dict[str, str]) -> None:
+        """Initialize with dict for extra args."""
+        self._extra = extra
 
     def __init_subclass__(cls, **kwargs):
         """Register preprocessor subclasses."""
@@ -322,8 +335,30 @@ class YmhaAttendanceFormat(Output):
     EMA_AFTERNOON_ITEM_COUNT = 5
     EMA_EVENING_ITEM_COUNT = 13
 
+    def _participants(self) -> pl.DataFrame:
+        """Load participants from file path in extra args."""
+        if "ymha_participants" not in self._extra:
+            raise MissingExtraArgumentError(
+                "YMHA Attendance Report requires ymha_participants parameter specified in 'extra' argument."
+            )
+        participants_path = Path(self._extra["ymha_participants"])
+        if not participants_path.is_file():
+            raise FileNotFoundError("YMHA Participants file not found.")
+
+        participants = pl.read_csv(participants_path)
+        if "site" not in participants.columns:
+            raise OutputGenerationError(
+                "'site' column not found in YMHA participants file"
+            )
+        if "secretUserId" not in participants.columns:
+            raise OutputGenerationError(
+                "'secretUserId' column not found in YMHA participants file"
+            )
+        return participants.select("secretUserId", "site")
+
     def _format(self, data: MindloggerData) -> list[NamedOutput]:
-        df = (
+        participants = self._participants()
+        site_dfs = (
             data.report.drop(
                 "activity_flow",
                 "activity_schedule",
@@ -336,6 +371,7 @@ class YmhaAttendanceFormat(Output):
             .agg(item_count=pl.col("item").count())
             .with_columns(
                 user_id=pl.col("target_user").struct.field("id"),
+                secret_id=pl.col("target_user").struct.field("secret_id"),
                 user_nickname=pl.col("target_user").struct.field("nickname"),
                 activity_name=pl.col("activity").struct.field("name"),
                 activity_date=pl.col("activity").struct.field("start_time").dt.date(),
@@ -354,5 +390,16 @@ class YmhaAttendanceFormat(Output):
                 "target_user",
                 "item_count",
             )
+            .join(
+                participants,
+                left_on="secret_id",
+                right_on="secretUserId",
+                how="left",
+                validate="m:1",
+            )
+            .partition_by("site", as_dict=True)
         )
-        return [NamedOutput("ymha_attendance", df)]
+        return [
+            NamedOutput(f"ymha_attendance-site_{site[0]}", df)
+            for site, df in site_dfs.items()
+        ]
