@@ -354,11 +354,15 @@ class YmhaAttendanceFormat(Output):
             raise OutputGenerationError(
                 "'secretUserId' column not found in YMHA participants file"
             )
-        return participants.select("secretUserId", "site")
+        return participants.select(
+            pl.col("secretUserId").alias("secret_id"),
+            pl.col("nickname").alias("participants_nickname"),
+            "site",
+        )
 
     def _format(self, data: MindloggerData) -> list[NamedOutput]:
         participants = self._participants()
-        site_dfs = (
+        attendance = (
             data.report.drop(
                 "activity_flow",
                 "activity_schedule",
@@ -370,9 +374,8 @@ class YmhaAttendanceFormat(Output):
             .group_by(["target_user", "activity"])
             .agg(item_count=pl.col("item").count())
             .with_columns(
-                user_id=pl.col("target_user").struct.field("id"),
                 secret_id=pl.col("target_user").struct.field("secret_id"),
-                user_nickname=pl.col("target_user").struct.field("nickname"),
+                ml_nickname=pl.col("target_user").struct.field("nickname"),
                 activity_name=pl.col("activity").struct.field("name"),
                 activity_date=pl.col("activity").struct.field("start_time").dt.date(),
             )
@@ -390,16 +393,27 @@ class YmhaAttendanceFormat(Output):
                 "target_user",
                 "item_count",
             )
-            .join(
-                participants,
-                left_on="secret_id",
-                right_on="secretUserId",
-                how="left",
-                validate="m:1",
+            .pivot(on="activity_name", values="activity_completed")
+            .select(
+                "secret_id",
+                # "ml_nickname",
+                "activity_date",
+                "^EMA.*$",
             )
-            .partition_by("site", as_dict=True)
         )
-        return [
-            NamedOutput(f"ymha_attendance-site_{site[0]}", df)
-            for site, df in site_dfs.items()
+        dates = attendance.select(pl.col("activity_date").unique()).filter(
+            pl.col("activity_date").is_not_null()
+        )
+        participant_dates = participants.join(dates, how="cross")
+        all_attendance = participant_dates.join(
+            attendance,
+            on=["secret_id", "activity_date"],
+            how="left",
+        ).with_columns(
+            pl.col(["EMA Morning", "EMA Afternoon", "EMA Evening"]).fill_null(False)  # noqa: FBT003
+        )
+        part_dfs = all_attendance.partition_by(["site", "activity_date"], as_dict=True)
+        return [NamedOutput("ymha_attendance-all", all_attendance)] + [
+            NamedOutput(f"ymha_attendance-site_{part[0]}-date_{part[1]}", df)
+            for part, df in part_dfs.items()
         ]
