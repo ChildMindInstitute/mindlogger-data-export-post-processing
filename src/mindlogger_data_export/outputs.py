@@ -331,9 +331,19 @@ class YmhaAttendanceFormat(Output):
     """YMHA attendance format."""
 
     NAME = "ymha-attendance"
-    EMA_MORNING_ITEM_COUNT = 7
-    EMA_AFTERNOON_ITEM_COUNT = 5
-    EMA_EVENING_ITEM_COUNT = 13
+    ITEM_COUNTS = {
+        "EMA Morning": 7,
+        "EMA Afternoon": 5,
+        "EMA Evening": 13,
+        "Experience": 2,
+        "Mentor Experience": 7,
+        "Brief Version of the Big Five Personality Inventory BFI": 10,
+        "MinT Mentoring Styles Questionnaire": 25,
+        "MEIM-6": 7,
+        "The MAP": 2,
+        "Program-Developed": 3,
+        "Mentor Experience (Program-Developed)": 3,
+    }
 
     def _participants(self) -> pl.DataFrame:
         """Load participants from file path in extra args."""
@@ -356,14 +366,16 @@ class YmhaAttendanceFormat(Output):
             )
         return participants.select(
             pl.col("secretUserId").alias("secret_id"),
-            pl.col("nickname").alias("participants_nickname"),
+            pl.col("nickname"),
+            pl.col("firstName").alias("first_name"),
+            pl.col("lastName").alias("last_name"),
             "site",
         )
 
     def _format(self, data: MindloggerData) -> list[NamedOutput]:
         participants = self._participants()
 
-        attendance = (
+        activities = (
             data.report.drop(
                 "activity_flow",
                 "activity_schedule",
@@ -376,47 +388,56 @@ class YmhaAttendanceFormat(Output):
             .agg(item_count=pl.col("item").count())
             .with_columns(
                 secret_id=pl.col("target_user").struct.field("secret_id"),
-                ml_nickname=pl.col("target_user").struct.field("nickname"),
-                activity_name=pl.col("activity").struct.field("name"),
-                activity_date=pl.col("activity").struct.field("start_time").dt.date(),
+                activity_name=pl.col("activity").struct.field("name").str.strip_chars(),
+                # activity_date=pl.col("activity").struct.field("start_time").dt.date(),
             )
             .with_columns(
-                activity_completed=pl.when(pl.col("activity_name") == "EMA Morning")
-                .then(pl.col("item_count") == self.EMA_MORNING_ITEM_COUNT)
-                .when(pl.col("activity_name") == "EMA Afternoon")
-                .then(pl.col("item_count") == self.EMA_AFTERNOON_ITEM_COUNT)
-                .when(pl.col("activity_name") == "EMA Evening")
-                .then(pl.col("item_count") == self.EMA_EVENING_ITEM_COUNT)
-                .otherwise(pl.lit(False)),  # noqa: FBT003
+                total_items=pl.col("activity_name").replace_strict(
+                    self.ITEM_COUNTS, default=0, return_dtype=pl.Int32
+                )
             )
-            .drop(
-                "activity",
-                "target_user",
-                "item_count",
-            )
-            .pivot(
-                on="activity_name",
-                values="activity_completed",
-                aggregate_function="last",
-            )
-            .select(
-                "secret_id",
-                # "ml_nickname",
-                "activity_date",
-                "^EMA.*$",
+            .with_columns(
+                activity_completed=pl.col("item_count").eq(pl.col("total_items"))
             )
         )
-        dates = attendance.select(pl.col("activity_date").unique()).filter(
-            pl.col("activity_date").is_not_null()
+
+        attendance = activities.drop(
+            "activity", "target_user", "item_count", "total_items"
+        ).pivot(
+            on="activity_name",
+            values="activity_completed",
+            aggregate_function=pl.element().any(),
+            sort_columns=True,
         )
-        participant_dates = participants.join(dates, how="cross")
-        all_attendance = participant_dates.join(
-            attendance,
-            on=["secret_id", "activity_date"],
-            how="left",
-        ).with_columns(pl.col("^EMA.*$").fill_null(False))  # noqa: FBT003
-        part_dfs = all_attendance.partition_by(["site", "activity_date"], as_dict=True)
+        all_attendance = attendance.join(
+            participants, on="secret_id", how="left"
+        ).select(
+            "secret_id",
+            "nickname",
+            "first_name",
+            "last_name",
+            "site",
+            cs.exclude(
+                ["secret_id", "nickname", "first_name", "last_name", "site"]
+            ).fill_null(False),  # noqa: FBT003
+        )
+        site_completion = all_attendance.partition_by("site", as_dict=True)
         return [NamedOutput("ymha_attendance-all", all_attendance)] + [
-            NamedOutput(f"ymha_attendance-site_{part[0]}-date_{part[1]}", df)
-            for part, df in part_dfs.items()
+            NamedOutput(f"ymha_completion-site_{part[0]}", df)
+            for part, df in site_completion.items()
         ]
+        # attendance = attendance.drop("ml_nickname")
+        # dates = attendance.select(pl.col("activity_date").unique()).filter(
+        #     pl.col("activity_date").is_not_null()
+        # )
+        # participant_dates = participants.join(dates, how="cross")
+        # all_attendance = participant_dates.join(
+        #     attendance,
+        #     on=["secret_id", "activity_date"],
+        #     how="left",
+        # ).with_columns(pl.col("^EMA.*$").fill_null(False))  # noqa: FBT003
+        # part_dfs = all_attendance.partition_by(["site", "activity_date"], as_dict=True)
+        # return [NamedOutput("ymha_attendance-all", all_attendance)] + [
+        #     NamedOutput(f"ymha_attendance-site_{part[0]}-date_{part[1]}", df)
+        #     for part, df in part_dfs.items()
+        # ]

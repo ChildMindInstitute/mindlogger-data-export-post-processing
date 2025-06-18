@@ -81,6 +81,7 @@ extend-ignore = [
     "ISC001",
     "ISC002",
     "TRY003",
+    "ERA001",
 ]
 
 [tool.ruff.lint.extend-per-file-ignores]
