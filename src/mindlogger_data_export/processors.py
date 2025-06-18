@@ -396,6 +396,5 @@ class SubscaleProcessor(ReportProcessor):
             )
             .with_columns(pl.col("item_response").cast(pl.String))
         )
-        ssdf.write_csv("ssdf.csv")
 
         return pl.concat([report.select(~ss_value_cs), ssdf], how="align")

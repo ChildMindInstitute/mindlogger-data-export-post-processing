@@ -362,6 +362,7 @@ class YmhaAttendanceFormat(Output):
 
     def _format(self, data: MindloggerData) -> list[NamedOutput]:
         participants = self._participants()
+
         attendance = (
             data.report.drop(
                 "activity_flow",
@@ -393,7 +394,11 @@ class YmhaAttendanceFormat(Output):
                 "target_user",
                 "item_count",
             )
-            .pivot(on="activity_name", values="activity_completed")
+            .pivot(
+                on="activity_name",
+                values="activity_completed",
+                aggregate_function="last",
+            )
             .select(
                 "secret_id",
                 # "ml_nickname",
@@ -409,9 +414,7 @@ class YmhaAttendanceFormat(Output):
             attendance,
             on=["secret_id", "activity_date"],
             how="left",
-        ).with_columns(
-            pl.col(["EMA Morning", "EMA Afternoon", "EMA Evening"]).fill_null(False)  # noqa: FBT003
-        )
+        ).with_columns(pl.col("^EMA.*$").fill_null(False))  # noqa: FBT003
         part_dfs = all_attendance.partition_by(["site", "activity_date"], as_dict=True)
         return [NamedOutput("ymha_attendance-all", all_attendance)] + [
             NamedOutput(f"ymha_attendance-site_{part[0]}-date_{part[1]}", df)
