@@ -13,10 +13,10 @@ LOG = logging.getLogger(__name__)
 class UserType(StrEnum):
     """Enumeration of Mindlogger user types."""
 
-    SOURCE = "source"
-    TARGET = "target"
-    INPUT = "input"
-    ACCOUNT = "account"
+    SOURCE = "source_user"
+    TARGET = "target_user"
+    INPUT = "input_user"
+    ACCOUNT = "account_user"
 
     @classmethod
     def columns(cls, user_type: UserType) -> list[str]:
@@ -24,24 +24,24 @@ class UserType(StrEnum):
         match user_type:
             case cls.SOURCE:
                 return [
-                    "source_user_subject_id",
-                    "source_user_secret_id",
-                    "source_user_nickname",
-                    "source_user_relation",
-                    "source_user_tag",
+                    "source_id",
+                    "source_secret_id",
+                    "source_nickname",
+                    "source_relation",
+                    "source_tag",
                 ]
             case cls.TARGET:
                 return [
-                    "target_user_subject_id",
-                    "target_user_secret_id",
-                    "target_user_nickname",
-                    "target_user_tag",
+                    "target_id",
+                    "target_secret_id",
+                    "target_nickname",
+                    "target_tag",
                 ]
             case cls.INPUT:
                 return [
-                    "input_user_subject_id",
-                    "input_user_secret_id",
-                    "input_user_nickname",
+                    "input_id",
+                    "input_secret_id",
+                    "input_nickname",
                 ]
             case cls.ACCOUNT:
                 return ["userId", "secret_user_id"]
@@ -62,65 +62,25 @@ class MindloggerUser:
     """Data model of a Mindlogger user."""
 
     user_type: UserType
-    subject_id: str
+    id: str
     secret_id: str
     nickname: str | None = None
     tag: str | None = None
     relation: str | None = None
 
     @classmethod
-    def from_source_struct(cls, struct: dict[str, str]) -> MindloggerUser:
+    def from_struct(cls, user_type: UserType, struct: dict[str, str]) -> MindloggerUser:
         """Create MindloggerUser object from source struct."""
-        return cls(
-            UserType.SOURCE,
-            struct["source_user_subject_id"],
-            struct["source_user_secret_id"],
-            struct["source_user_nickname"],
-            struct["source_user_relation"],
-            struct["source_user_tag"],
-        )
-
-    @classmethod
-    def from_target_struct(cls, struct: dict[str, str]) -> MindloggerUser:
-        """Create MindloggerUser object from target struct."""
-        return cls(
-            UserType.TARGET,
-            struct["target_user_subject_id"],
-            struct["target_user_secret_id"],
-            struct["target_user_nickname"],
-            struct["target_user_tag"],
-        )
-
-    @classmethod
-    def from_input_struct(cls, struct: dict[str, str]) -> MindloggerUser:
-        """Create MindloggerUser object from input struct."""
-        return cls(
-            UserType.INPUT,
-            struct["input_user_subject_id"],
-            struct["input_user_secret_id"],
-            struct["input_user_nickname"],
-        )
-
-    @classmethod
-    def from_account_struct(cls, struct: dict[str, str]) -> MindloggerUser:
-        """Create MindloggerUser object from account struct."""
-        return cls(
-            UserType.ACCOUNT,
-            struct["userId"],
-            struct["secret_user_id"],
-        )
+        return cls(user_type, **struct)
 
     @classmethod
     def from_struct_factory(
         cls, user_type: UserType
     ) -> Callable[[dict[str, str]], MindloggerUser]:
         """Create MindloggerUser object from struct."""
-        match user_type:
-            case UserType.SOURCE:
-                return cls.from_source_struct
-            case UserType.TARGET:
-                return cls.from_target_struct
-            case UserType.INPUT:
-                return cls.from_input_struct
-            case UserType.ACCOUNT:
-                return cls.from_account_struct
+
+        def _from_struct_partial(struct: dict[str, str]) -> MindloggerUser:
+            """Partial function to create MindloggerUser from struct."""
+            return cls.from_struct(user_type, struct)
+
+        return _from_struct_partial
