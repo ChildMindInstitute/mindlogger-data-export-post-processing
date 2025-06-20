@@ -328,26 +328,29 @@ class ScoredResponsesFormat(Output):
 
 
 class YmhaAttendanceFormat(Output):
-    """YMHA attendance format."""
+    """YMHA attendance format.
+
+    Outputs attendance and completion records for YMHA 2025 Mindlogger data.
+
+    Running this output requires an additional parameter specified in the command line via the 'extra'
+    keyword arguments:
+    `-e ymha_participants <filepath to participants csv>`
+
+    Participants CSV should contain the following columns at minimum:
+    nickname,firstName,lastName,secretUserId,site
+
+    Attendance records are computed on "Student Check-Ins" and "Student Check-Outs" activities.
+    Attendance records are partitioned by site and date, and contain a boolean column for each activity indicating
+    whether that activity was completed on that date.
+
+    Completion records are computed on all other activities.
+    Completion records are partitioned by site only, and contain boolean columns for all activities indicating whether
+    that activity has been completed by the given participant.
+
+    Activity completion is based on presence of any responses from that activity in the data.
+    """
 
     NAME = "ymha-attendance"
-    ITEM_COUNTS = {
-        "EMA Morning": 7,
-        "EMA Afternoon": 5,
-        "EMA Evening": 13,
-        "Healthcare Access": 6,
-        "Mental Healthcare": 5,
-        "PSC": 17,
-        "Mental Health Attitudes and Help-Seeking": 6,
-        "Experience": 2,
-        "Mentor Experience": 7,
-        "Brief Version of the Big Five Personality Inventory BFI": 10,
-        "MinT Mentoring Styles Questionnaire": 25,
-        "MEIM-6": 7,
-        "The MAP": 2,
-        "Program-Developed": 3,
-        "Mentor Experience (Program-Developed)": 3,
-    }
 
     def _participants(self) -> pl.DataFrame:
         """Load participants from file path in extra args."""
@@ -416,8 +419,8 @@ class YmhaAttendanceFormat(Output):
             maintain_order=True,
             sort_columns=True,
         )
-        all_completion = completion.join(
-            participants, on="secret_id", how="left"
+        all_completion = participants.join(
+            completion, on="secret_id", how="left"
         ).select(
             "secret_id",
             "nickname",

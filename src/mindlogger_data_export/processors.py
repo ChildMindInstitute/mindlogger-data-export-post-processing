@@ -51,6 +51,7 @@ class ReportProcessor(Protocol):
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Run process."""
+        raise NotImplementedError("Subclasses must implement this method.")
 
 
 class DropLegacyUserIdProcessor(ReportProcessor):
