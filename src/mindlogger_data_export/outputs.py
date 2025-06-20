@@ -35,9 +35,9 @@ class Output(ABC):
 
     TYPES: dict[str, type[Output]] = {}
 
-    def __init__(self, extra: dict[str, str]) -> None:
+    def __init__(self, extra: dict[str, str] | None = None) -> None:
         """Initialize with dict for extra args."""
-        self._extra = extra
+        self._extra = extra if extra is not None else {}
 
     def __init_subclass__(cls, **kwargs):
         """Register preprocessor subclasses."""
