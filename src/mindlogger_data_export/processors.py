@@ -104,9 +104,9 @@ class ResponseStructProcessor(ReportProcessor):
     NAME = "ResponseStruct"
     PARSER = ResponseParser()
     RESPONSE_SCHEMA = {
-        "status": pl.String,
-        "value": PARSER.datatype,
-        "raw_score": pl.String,
+        "status": pl.String(),
+        "response": PARSER.datatype,
+        "raw_score": pl.String(),
     }
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
@@ -116,7 +116,8 @@ class ResponseStructProcessor(ReportProcessor):
                 pl.col("rawScore").alias("raw_score"),
                 pl.col("item_response")
                 .str.strip_chars()
-                .map_elements(self.PARSER.parse, self.PARSER.datatype),
+                .map_elements(self.PARSER.parse, self.PARSER.datatype)
+                .alias("response"),
             )
         ).drop(
             "item_response_status",
@@ -134,12 +135,12 @@ class UserStructProcessor(ReportProcessor):
 
     NAME = "UserStruct"
 
-    USER_SCHEMA = {
-        "id": pl.String,
-        "secret_id": pl.String,
-        "nickname": pl.String,
-        "tag": pl.String,
-        "relation": pl.String,
+    USER_SCHEMA: dict[str, pl.DataType] = {
+        "id": pl.String(),
+        "secret_id": pl.String(),
+        "nickname": pl.String(),
+        "tag": pl.String(),
+        "relation": pl.String(),
     }
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
@@ -180,14 +181,14 @@ class ItemStructProcessor(ReportProcessor):
 
     NAME = "ItemStruct"
 
-    ITEM_SCHEMA = {
-        "id": pl.String,
-        "name": pl.String,
-        "prompt": pl.String,
-        "type": pl.String,
-        "raw_options": pl.String,
+    ITEM_SCHEMA: dict[str, pl.DataType] = {
+        "id": pl.String(),
+        "name": pl.String(),
+        "prompt": pl.String(),
+        "type": pl.String(),
+        "raw_options": pl.String(),
         "response_options": pl.List(
-            pl.Struct({"name": pl.String, "value": pl.Int64, "score": pl.Int64})
+            pl.Struct({"name": pl.String(), "value": pl.Int64(), "score": pl.Int64()})
         ),
     }
     PARSER = OptionsParser()
@@ -228,10 +229,10 @@ class ActivityFlowStructProcessor(ReportProcessor):
 
     NAME = "ActivityFlowStruct"
 
-    ACTIVITY_FLOW_SCHEMA = {
-        "id": pl.String,
-        "name": pl.String,
-        "submission_id": pl.String,
+    ACTIVITY_FLOW_SCHEMA: dict[str, pl.DataType] = {
+        "id": pl.String(),
+        "name": pl.String(),
+        "submission_id": pl.String(),
     }
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
@@ -255,11 +256,11 @@ class ActivityStructProcessor(ReportProcessor):
 
     NAME = "ActivityStruct"
 
-    ACTIVITY_SCHEMA = {
-        "id": pl.String,
-        "name": pl.String,
-        "submission_id": pl.String,
-        "submission_review_id": pl.String,
+    ACTIVITY_SCHEMA: dict[str, pl.DataType] = {
+        "id": pl.String(),
+        "name": pl.String(),
+        "submission_id": pl.String(),
+        "submission_review_id": pl.String(),
         "start_time": pl.Datetime(time_zone="UTC"),
         "end_time": pl.Datetime(time_zone="UTC"),
     }
@@ -295,9 +296,9 @@ class ActivityScheduleStructProcessor(ReportProcessor):
 
     NAME = "ActivityScheduleStruct"
 
-    ACTIVITY_SCHEDULE_SCHEMA = {
-        "id": pl.String,
-        "history_id": pl.String,
+    ACTIVITY_SCHEDULE_SCHEMA: dict[str, pl.DataType] = {
+        "id": pl.String(),
+        "history_id": pl.String(),
         "start_time": pl.Datetime(time_zone="UTC"),
     }
 

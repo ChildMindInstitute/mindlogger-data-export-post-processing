@@ -205,21 +205,21 @@ class ResponseParser:
         """Return Polars schema for response types."""
         return pl.Struct(
             [
-                pl.Field("type", pl.String),
-                pl.Field("raw_value", pl.String),
-                pl.Field("null_value", pl.Boolean),
-                pl.Field("value", pl.List(pl.String)),
-                pl.Field("text", pl.String),
-                pl.Field("file", pl.String),
-                pl.Field("date", pl.Date),
-                pl.Field("time", pl.Time),
-                pl.Field("time_range", pl.Duration),
+                pl.Field("type", pl.String()),
+                pl.Field("raw_value", pl.String()),
+                pl.Field("null_value", pl.Boolean()),
+                pl.Field("value", pl.List(pl.String())),
+                pl.Field("text", pl.String()),
+                pl.Field("file", pl.String()),
+                pl.Field("date", pl.Date()),
+                pl.Field("time", pl.Time()),
+                pl.Field("time_range", pl.Duration()),
                 pl.Field(
                     "geo",
                     pl.Struct(
                         [
-                            pl.Field("latitude", pl.Float64),
-                            pl.Field("longitude", pl.Float64),
+                            pl.Field("latitude", pl.Float64()),
+                            pl.Field("longitude", pl.Float64()),
                         ]
                     ),
                 ),
@@ -228,13 +228,13 @@ class ResponseParser:
                     pl.List(
                         pl.Struct(
                             [
-                                pl.Field("row", pl.String),
-                                pl.Field("value", pl.List(pl.String)),
+                                pl.Field("row", pl.String()),
+                                pl.Field("value", pl.List(pl.String())),
                             ]
                         )
                     ),
                 ),
-                pl.Field("optional_text", pl.String),
+                pl.Field("optional_text", pl.String()),
             ]
         )
 

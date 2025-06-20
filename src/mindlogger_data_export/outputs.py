@@ -377,6 +377,7 @@ class YmhaAttendanceFormat(Output):
             pl.col("firstName").alias("first_name"),
             pl.col("lastName").alias("last_name"),
             "site",
+            cs.matches("^room$"),
         )
 
     def _attendance(
@@ -427,8 +428,16 @@ class YmhaAttendanceFormat(Output):
             "first_name",
             "last_name",
             "site",
+            cs.matches(r"^room$"),
             cs.exclude(
-                ["secret_id", "nickname", "first_name", "last_name", "site"]
+                [
+                    "secret_id",
+                    "nickname",
+                    "first_name",
+                    "last_name",
+                    "site",
+                    cs.matches("^room$"),
+                ]
             ).fill_null(False),  # noqa: FBT003
         )
         site_completion = all_completion.partition_by("site", as_dict=True)
