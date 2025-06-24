@@ -6,7 +6,6 @@ import logging
 from functools import cached_property
 from pathlib import Path
 
-import pandas as pd
 import polars as pl
 
 from .models import MindloggerUser, UserType
@@ -52,11 +51,6 @@ class MindloggerData:
     def report(self) -> pl.DataFrame:
         """Get report DataFrame."""
         return pl.DataFrame(self._response_data)
-
-    @cached_property
-    def report_pd(self) -> pd.DataFrame:
-        """Get report DataFrame in Pandas format."""
-        return self._response_data.to_pandas()
 
     @cached_property
     def long_options_report(self) -> pl.DataFrame:
@@ -119,11 +113,6 @@ class MindloggerData:
                 "item_response_options",
             ).unique()
         )
-
-    @cached_property
-    def data_dictionary_pd(self) -> pd.DataFrame:
-        """Return unique items in report in Pandas format."""
-        return self.data_dictionary.to_pandas()
 
     @staticmethod
     def expand_options(df: pl.DataFrame) -> pl.DataFrame:
