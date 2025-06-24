@@ -393,6 +393,7 @@ class YmhaAttendanceFormat(Output):
                 values="activity_completed",
                 sort_columns=True,
                 maintain_order=True,
+                aggregate_function="first",
             )
         )
         dates = attendance.select(pl.col("activity_date").unique()).filter(

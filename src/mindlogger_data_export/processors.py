@@ -110,7 +110,6 @@ class ResponseStructProcessor(ReportProcessor):
     }
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
-        LOG.debug("ResponseStruct: %s", report.columns)
         return report.with_columns(
             response=pl.struct(
                 pl.col("item_response_status").alias("status"),
