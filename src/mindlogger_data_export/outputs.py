@@ -420,31 +420,54 @@ class YmhaAttendanceFormat(Output):
             maintain_order=True,
             sort_columns=True,
         )
-        all_completion = participants.join(
-            completion, on="secret_id", how="left"
-        ).select(
+        activity_col_selector = cs.exclude(
+            [
+                "secret_id",
+                "nickname",
+                "first_name",
+                "last_name",
+                "site",
+                cs.matches("^room$"),
+            ]
+        )
+        identifier_col_selector = cs.by_name(
             "secret_id",
             "nickname",
             "first_name",
             "last_name",
             "site",
-            cs.matches(r"^room$"),
-            cs.exclude(
-                [
-                    "secret_id",
-                    "nickname",
-                    "first_name",
-                    "last_name",
-                    "site",
-                    cs.matches("^room$"),
-                ]
-            ).fill_null(False),  # noqa: FBT003
+        ) | cs.matches(r"^room$")
+        all_completion = (
+            participants.join(completion, on="secret_id", how="left")
+            .select(
+                identifier_col_selector,
+                activity_col_selector.fill_null(False),  # noqa: FBT003
+            )
+            .with_columns(
+                complete=pl.concat_list(activity_col_selector).list.all(),
+            )
         )
         site_completion = all_completion.partition_by("site", as_dict=True)
-        return [NamedOutput("ymha_completion-all", all_completion)] + [
-            NamedOutput(f"ymha_completion-site_{part[0]}", df)
-            for part, df in site_completion.items()
-        ]
+        return (
+            [
+                NamedOutput("ymha_completion-all", all_completion),
+                NamedOutput(
+                    "ymha_completion_summary-all",
+                    all_completion.select(identifier_col_selector, "complete"),
+                ),
+            ]
+            + [
+                NamedOutput(f"ymha_completion-site_{part[0]}", df)
+                for part, df in site_completion.items()
+            ]
+            + [
+                NamedOutput(
+                    f"ymha_completion_summary-site_{part[0]}",
+                    df.select(identifier_col_selector, "complete"),
+                )
+                for part, df in site_completion.items()
+            ]
+        )
 
     def _format(self, data: MindloggerData) -> list[NamedOutput]:
         participants = self._participants()

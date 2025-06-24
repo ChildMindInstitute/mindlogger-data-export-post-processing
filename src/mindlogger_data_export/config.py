@@ -37,7 +37,9 @@ class OutputConfig:
     output_dir: Annotated[Path | None, arg(aliases=["-o"])] = None
     """Path to output directory, where processed data will be written. Defaults to input_dir."""
 
-    output_format: Annotated[Literal["csv", "parquet"], arg(aliases=["-f"])] = "csv"
+    output_format: Annotated[
+        Literal["csv", "parquet", "excel"], arg(aliases=["-f"])
+    ] = "csv"
 
     outputs: Annotated[
         UseAppendAction[list[str]],

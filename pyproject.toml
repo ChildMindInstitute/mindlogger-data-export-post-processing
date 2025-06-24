@@ -13,6 +13,7 @@ dependencies = [
     "pandas>=2.2.3",
     "polars>=1.17.1",
     "tyro>=0.9.5",
+    "xlsxwriter>=3.2.5",
 ]
 
 [project.scripts]

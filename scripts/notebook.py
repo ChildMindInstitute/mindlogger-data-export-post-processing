@@ -17,6 +17,12 @@ def _():
 
 
 @app.cell
+def _(pl):
+    _df = pl.DataFrame(data={"part": [False, False], "data": [0, 1]})
+    _df.partition_by("part", as_dict=True)
+
+
+@app.cell
 def _(MindloggerData, Path):
     md = MindloggerData.create(Path("data/greek/"))
     return (md,)

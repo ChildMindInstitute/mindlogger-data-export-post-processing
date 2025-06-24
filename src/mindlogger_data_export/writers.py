@@ -77,6 +77,47 @@ class CsvWriter(OutputWriter):
         df.write_csv((output_dir / output.name).with_suffix(".csv"))
 
 
+class ExcelWriter(OutputWriter):
+    """Write data to Excel format."""
+
+    NAME = "excel"
+
+    def write(
+        self,
+        output: NamedOutput,
+        output_dir: Path,
+        *,
+        drop_null_columns: bool = False,
+        create_dir: bool = True,
+    ) -> None:
+        """Write data to output directory."""
+        df = output.output.clone()
+        if drop_null_columns:
+            df = df.select([s.name for s in df if not (s.null_count() == df.height)])
+
+        if create_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        df.write_excel(
+            (output_dir / output.name).with_suffix(".xlsx"),
+            conditional_formats={
+                cs.all(): [
+                    {
+                        "type": "cell",
+                        "criteria": "==",
+                        "value": False,
+                        "format": {"bg_color": "#FFC7CE"},
+                    },
+                    {
+                        "type": "cell",
+                        "criteria": "==",
+                        "value": True,
+                        "format": {"bg_color": "#C6EFCE"},
+                    },
+                ]
+            },
+        )
+
+
 class ParquetWriter(OutputWriter):
     """Write data to Parquet format."""
 
