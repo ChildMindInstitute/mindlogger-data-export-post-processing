@@ -42,6 +42,7 @@ def main(config: OutputConfig) -> None:
         for output_type in config.output_types_or_all:
             if output_type not in Output.TYPES:
                 raise ValueError(f"Unknown output type argument: {output_type}")  # noqa: TRY301
+            logging.debug("Producing output type [%s]", output_type)
             output_producer = Output.TYPES[output_type](config.extra)
             outputs = output_producer.produce(ml_data)
             for output in outputs:
