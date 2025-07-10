@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Protocol
 
@@ -152,4 +153,6 @@ class ParquetWriter(OutputWriter):
         # Write to Parquet.
         if create_dir:
             output_dir.mkdir(parents=True, exist_ok=True)
-        df.write_parquet((output_dir / output.name).with_suffix(".parquet"))
+        df.write_parquet(
+            (output_dir / re.sub(r"\s+", "_", output.name)).with_suffix(".parquet")
+        )
