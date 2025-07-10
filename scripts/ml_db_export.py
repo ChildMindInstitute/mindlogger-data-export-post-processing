@@ -12,92 +12,7 @@ def _():
     import marimo as mo
     import polars as pl
     import polars.selectors as cs
-
     return Path, cs, mo, os, pl
-
-
-@app.cell(hide_code=True)
-def _(cs, pl):
-    _df = pl.DataFrame(
-        data={
-            "subscale_one": ["0", None, "f", "30"],
-            "activity_score": [None, None, "99", None],
-            "item_name": ["item1", "item2", "item2", "item4"],
-            "item_response": ["response1", "response2", "resp3", "resp4"],
-            "item_type": ["multi", "single", "single", "geo"],
-            "activity_name": ["ac1", "ac2", "ac1", "ac2"],
-            "id": ["id1", "id1", "id2", "id2"],
-        }
-    )
-
-    _sscs = cs.by_name("subscale_one", "activity_score")
-
-    _df = _df.with_columns(pl.struct(_sscs).alias("subscale")).drop(
-        cs.by_name("subscale_one", "activity_score")
-    )
-
-    _sdf = _df.unpivot(
-        index=(~cs.by_name("item_response", "item_name", "item_type", "subscale")),
-        on="subscale",
-        value_name="subscale_value",
-        variable_name="item_type",
-    )
-    _sdf = (
-        _sdf.with_columns(
-            pl.col("subscale_value").map_elements(
-                lambda e: [
-                    {
-                        "item_name": vn,
-                        "item_response": vv,
-                    }
-                    for vn, vv in e.items()
-                    if vv
-                ],
-                return_dtype=pl.List(
-                    pl.Struct(
-                        {
-                            "item_name": pl.String,
-                            "item_response": pl.String,
-                        }
-                    )
-                ),
-            )
-        )
-        .filter(pl.col("subscale_value").list.len() > 0)
-        .explode("subscale_value")
-        .unnest("subscale_value")
-    )
-    pl.concat([_df.drop("subscale"), _sdf], how="diagonal")
-
-
-@app.cell(hide_code=True)
-def _(cs, pl):
-    _df = pl.DataFrame(
-        data={
-            "subscale_one": ["0", None, "f", "30"],
-            "activity_score": [None, None, "99", None],
-            "item_name": ["item1", "item2", "item2", "item4"],
-            "item_response": ["response1", "response2", "resp3", "resp4"],
-            "item_type": ["multi", "single", "single", "geo"],
-            "activity_name": ["ac1", "ac2", "ac1", "ac2"],
-            "id": ["id1", "id1", "id2", "id2"],
-        }
-    )
-
-    pl.concat(
-        [
-            _df.drop(cs.by_name("subscale_one", "activity_score")),
-            _df.unpivot(
-                index=cs.by_name("id", "activity_name"),
-                on=cs.by_name("subscale_one", "activity_score"),
-                variable_name="item_name",
-                value_name="item_response",
-            )
-            .filter(pl.col("item_response").is_not_null())
-            .with_columns(item_type=pl.lit("subscale")),
-        ],
-        how="diagonal",
-    )
 
 
 @app.cell(hide_code=True)
@@ -142,6 +57,7 @@ def _(OutputGenerationError, cs, mo, participants_file, pl, run_button):
             cs.matches("^room$"),
         )
 
+
     mo.stop(not run_button.value, mo.md(""))
     participants_data = load_participants(participants_file.contents())
     return (participants_data,)
@@ -183,12 +99,13 @@ def _(data_file, mo, pl, run_button):
             .with_columns(activity_completed=pl.lit(True))
         )
 
+
     mo.stop(not run_button.value, mo.md(""))
     data = load_data(data_file.contents())
     return (data,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(cs, pl):
     def calc_attendance(
         df: pl.DataFrame, participants: pl.DataFrame
@@ -209,11 +126,14 @@ def _(cs, pl):
             on=["secret_id", "activity_date"],
             how="left",
         ).with_columns(pl.col("^Student Check.*$").fill_null(False))  # noqa: FBT003
-        part_dfs = all_attendance.partition_by(["site", "activity_date"], as_dict=True)
+        part_dfs = all_attendance.partition_by(
+            ["site", "activity_date"], as_dict=True
+        )
         return [(("ymha_attendance-all",), all_attendance)] + [
-            ((f"site_{part[0]}", f"date_{part[1]}", "ymha_attendance"), df)
+            ((f"site_{part[0]}", f"date_{part[1]}", f"ymha_attendance"), df)
             for part, df in part_dfs.items()
         ]
+
 
     def calc_completion(
         df: pl.DataFrame, participants: pl.DataFrame
@@ -267,13 +187,12 @@ def _(cs, pl):
             ]
             + [
                 (
-                    ("site_{part[0]}", "ymha_completion_summary"),
+                    ("site_{part[0]}", f"ymha_completion_summary"),
                     df.select(identifier_col_selector, "complete"),
                 )
                 for part, df in site_completion.items()
             ]
         )
-
     return calc_attendance, calc_completion
 
 
@@ -330,6 +249,7 @@ def _(Path, cs, mo, output_dir, outputs, run_button):
         print(f"{len(outputs)} outputs written.")
         disp = mo.md(f"{len(outputs)} outputs written.")
     disp
+    return
 
 
 if __name__ == "__main__":
