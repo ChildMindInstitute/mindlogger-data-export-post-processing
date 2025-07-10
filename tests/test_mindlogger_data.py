@@ -3,12 +3,13 @@
 
 from pathlib import Path
 
-from datetime import date, time, timedelta
+from datetime import date, time, timedelta, datetime
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
 from mindlogger_data_export.parsers import ResponseParser
+from mindlogger_data_export import schema
 from mindlogger_data_export import (
     MindloggerData,
     UserType,
@@ -80,6 +81,124 @@ def test_mindlogger_account_users(datafiles: Path):
     assert len(account_users) == 1
     assert account_users[0].user_type == UserType.ACCOUNT
     assert account_users[0].id == "6056fc79-931a-412e-b15b-d5798c826a23"
+
+
+@pytest.fixture
+def report():
+    """Input general report."""
+    return pl.DataFrame(
+        {
+            "applet_version": ["0.1.1"],
+            "utc_timezone_offset": [timedelta(minutes=-300)],
+            "target_user": [
+                {
+                    "id": "U1",
+                    "secret_id": "SECU1",
+                    "nickname": "NICK1",
+                    "relation": "RELREL",
+                    "tag": "TAG1",
+                }
+            ],
+            "source_user": [
+                {
+                    "id": "U1",
+                    "secret_id": "SECU1",
+                    "nickname": "NICK1",
+                    "relation": "RELREL",
+                    "tag": "TAG1",
+                }
+            ],
+            "input_user": [
+                {
+                    "id": "U1",
+                    "secret_id": "SECU1",
+                    "nickname": "NICK1",
+                    "relation": "RELREL",
+                    "tag": "TAG1",
+                }
+            ],
+            "account_user": [
+                {
+                    "id": "U1",
+                    "secret_id": "SECU1",
+                    "nickname": "NICK1",
+                    "relation": "RELREL",
+                    "tag": "TAG1",
+                }
+            ],
+            "item": [
+                {
+                    "id": "ItemId1",
+                    "name": "ItemName1",
+                    "prompt": "Prompt1",
+                    "type": "singleSelect",
+                    "raw_options": "",
+                    "response_options": [
+                        {
+                            "name": "Option1",
+                            "value": 0,
+                            "score": 1,
+                        },
+                        {
+                            "name": "Option2",
+                            "value": 1,
+                            "score": 2,
+                        },
+                        {
+                            "name": "Option3",
+                            "value": 2,
+                            "score": 3,
+                        },
+                    ],
+                }
+            ],
+            "response": [
+                {
+                    "status": "completed",
+                    "value": {"value": [0, 1]},
+                    "raw_score": 1,
+                }
+            ],
+            "activity_flow": [
+                {
+                    "id": "FLOW1",
+                    "name": "FlowName1",
+                    "submission_id": "FlowSubmissionId1",
+                }
+            ],
+            "activity": [{"id": "ActivityId1", "name": "ActivityName1"}],
+            "activity_time": [
+                {
+                    "start_time": datetime(2012, 1, 2, 12, 10, 11),
+                    "end_time": datetime(2012, 1, 2, 12, 15, 15),
+                }
+            ],
+            "activity_schedule": [
+                {
+                    "id": "ActivityScheduleId1",
+                    "history_id": "ActivityHistoryId",
+                    "start_time": datetime(2012, 1, 1),
+                }
+            ],
+        },
+        schema=schema.INTERNAL_SCHEMA,
+    )
+
+
+def test_expand_options(report):
+    _df = MindloggerData.expand_options(report)
+    assert _df is not None
+
+
+def test_expand_responses(report):
+    _df = MindloggerData.expand_responses(report)
+    assert _df is not None
+
+
+def test_data_dictionary(report):
+    _data = MindloggerData(report)
+    print(_data.data_dictionary)
+    assert _data.data_dictionary is not None
 
 
 # def test_long_response():

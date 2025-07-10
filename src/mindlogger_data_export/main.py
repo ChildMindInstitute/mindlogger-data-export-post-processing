@@ -45,8 +45,15 @@ def main(config: OutputConfig) -> None:
             logging.debug("Producing output type [%s]", output_type)
             output_producer = Output.TYPES[output_type](config.extra)
             outputs = output_producer.produce(ml_data)
+            logging.debug(
+                "Output type (%s) produced (%d) outputs", output_type, len(outputs)
+            )
             for output in outputs:
-                writer.write(output, config.output_dir_or_default)
+                writer.write(
+                    output,
+                    config.output_dir_or_default,
+                    drop_null_columns=config.drop_null_columns,
+                )
     except Exception as e:
         if config.log_level == LogLevel.DEBUG:
             raise

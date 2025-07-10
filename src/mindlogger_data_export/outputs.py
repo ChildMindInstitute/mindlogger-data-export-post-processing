@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +12,8 @@ import polars as pl
 import polars.selectors as cs
 
 from .mindlogger import MindloggerData
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,6 +39,8 @@ class Output(ABC):
 
     TYPES: dict[str, type[Output]] = {}
 
+    DEFAULT: bool = True
+
     def __init__(self, extra: dict[str, str] | None = None) -> None:
         """Initialize with dict for extra args."""
         self._extra = extra if extra is not None else {}
@@ -57,166 +63,10 @@ class Output(ABC):
         """Print information about output types."""
         return {k: v.__doc__ for k, v in cls.TYPES.items() if v.__doc__}
 
-
-class WideActivityDataFormat(Output):
-    """Write wide data to CSV."""
-
-    NAME = "wide-activity"
-
-    df_cols = {
-        "target_id",
-        "target_secret_id",
-        "target_nickname",
-        "target_tag",
-        "source_id",
-        "source_secret_id",
-        "source_nickname",
-        "source_tag",
-        "source_relation",
-        "input_id",
-        "input_secret_id",
-        "input_nickname",
-        "userId",
-        "secret_user_id",
-        "applet_version",
-        "activity_flow_id",
-        "activity_flow_name",
-        "activity_flow_submission_id",
-        "activity_id",
-        "activity_name",
-        "activity_submission_id",
-        "activity_start_time",
-        "activity_end_time",
-        "activity_schedule_id",
-        "activity_schedule_start_time",
-        "utc_timezone_offset",
-        "activity_submission_review_id",
-        "item_id",
-        "item_name",
-        "item_prompt",
-        "item_response_options",
-        "item_response",
-        "item_response_status",
-        "item_type",
-        "rawScore",
-    }
-    index_columns = [
-        "userId",
-        "activity_submission_id",
-        "source_secret_id",
-        "target_secret_id",
-        "input_secret_id",
-        "activity_start_time_dt_utc",
-        "activity_end_time_dt_utc",
-        "activity_schedule_start_time_dt_utc",
-        "activity_flow_id",
-        "activity_flow_name",
-        "activity_id",
-        "activity_flow_submission_id",
-        "applet_version",
-    ]
-
-    pivot_columns = [
-        "activity_name",
-        "item_name",
-        "item_id",
-        "item_response_value_index",
-        # "item_response_matrix_row",
-        # "item_response_matrix_value_index",
-        "item_response_type",
-    ]
-    DROP = [
-        "activity_schedule_start_time",
-        "activity_start_time",
-        "activity_end_time",
-        "input_id",
-        "input_secret_id",
-        "input_nickname",
-        "parsed_options",
-        "parsed_response",
-        "utc_timezone_offset",
-        "activity_submission_id",
-        "activity_submission_review_id",
-        "activity_flow_submission_id",
-        "item_response_file",
-        "item_response_date",
-        "item_response_time",
-        "item_response_time_range",
-        "item_response_geo_latitude",
-        "item_response_geo_longitude",
-        "item_response_matrix_row",
-        "item_response_matrix_value",
-        "item_response_matrix_value_index",
-        "item_response",
-        "item_prompt",
-        "item_response_options",
-        "item_response_status",
-        "item_id",
-        "item_response_type",
-    ]
-
-    ACTUAL_COLUMNS = [
-        "secret_user_id",
-        "source_relation",
-        "source_tag",
-        "source_nickname",
-        "source_secret_id",
-        "source_id",
-        "target_secret_id",
-        "target_id",
-        "target_tag",
-        "target_nickname",
-        "userId",
-        "applet_version",
-        "activity_id",
-        "activity_name",
-        "activity_flow_id",
-        "activity_flow_name",
-        "activity_schedule_id",
-        "activity_schedule_start_time_dt_utc",
-        "activity_start_time_dt_utc",
-        "activity_end_time_dt_utc",
-    ]
-    PIVOT_C = [
-        "item_name",
-        "item_type",
-        "item_response_value_index",
-    ]
-    RESPONSE_COLUMNS = [
-        "item_response_raw_value",
-        "item_response_null_value",
-        "item_response_value",
-        "item_response_text",
-        "item_response_optional_text",
-        "rawScore",
-    ]
-
-    def _format(self, data: MindloggerData) -> list[NamedOutput]:
-        df = data.long_response_report
-        df = df.drop(self.DROP).drop(cs.duration())
-        df.write_csv("wide.csv")
-        df = df.with_columns((cs.by_name(self.PIVOT_C) & cs.string()).fill_null(""))
-        df = df.with_columns(pl.col("item_response_value_index").fill_null(0))
-
-        df = df.pivot(
-            on=self.PIVOT_C,
-            index=self.ACTUAL_COLUMNS,
-            values=self.RESPONSE_COLUMNS,
-            sort_columns=True,
-        )
-        df = df.select(
-            x.name for x in filter(lambda x: x.null_count() != df.height, df)
-        )
-        df = df.select(
-            ~cs.contains("{"),
-            cs.contains("{").name.map(
-                lambda x: x.replace("{", "_")
-                .replace("}", "")
-                .replace('"', "")
-                .replace(",", "__")
-            ),
-        )
-        return [NamedOutput("wide_data", df)]
+    def unnest_structs(self, struct_cols: list[str]) -> Generator[pl.Expr, None, None]:
+        """Unnest struct columns and prefix resulting columns with '<column_name>_'."""
+        for sc in struct_cols:
+            yield pl.col(sc).struct.unnest().name.prefix(f"{sc}_")
 
 
 class WideFormat(Output):
@@ -224,8 +74,90 @@ class WideFormat(Output):
 
     NAME = "wide"
 
+    def _pivot(self, df: pl.DataFrame) -> pl.DataFrame:
+        df = (
+            df.with_columns(
+                item=pl.concat_str(
+                    pl.col("item").struct.field("id", "name"),
+                    separator="_",
+                    ignore_nulls=True,
+                ),
+                response_value=pl.col("response").struct.field("value"),
+                response_raw_score=pl.col("response").struct.field("raw_score"),
+            )
+            .with_columns(self.unnest_structs(["response_value"]))
+            .drop("response_value_matrix", "response_value_geo")
+            .with_columns(pl.col("response_value_value").fill_null(pl.lit([])))
+        )
+        max_value_len = df.select(pl.col("response_value_value").list.len().max())[
+            0, "response_value_value"
+        ]
+
+        df = (
+            df.with_columns(
+                pl.col("response_value_value").list.to_struct(
+                    n_field_strategy="max_width", upper_bound=max_value_len
+                )
+            )
+            .with_columns(self.unnest_structs(["response_value_value"]))
+            .drop(
+                "response",
+                "response_value",
+                "response_value_type",
+                "response_value_value",
+            )
+        )
+        return (
+            df.pivot(
+                on="item",
+                values=cs.starts_with("response_"),
+            )
+            .with_columns(
+                self.unnest_structs(
+                    [
+                        "activity_time",
+                        "account_user",
+                        "target_user",
+                        "source_user",
+                        "input_user",
+                        "activity",
+                        "activity_flow",
+                        "activity_submission",
+                        "activity_schedule",
+                    ]
+                ),
+            )
+            .drop(
+                "activity_time",
+                "account_user",
+                "target_user",
+                "source_user",
+                "input_user",
+                "activity",
+                "activity_flow",
+                "activity_schedule",
+                "activity_submission",
+            )
+        )
+
     def _format(self, data: MindloggerData) -> list[NamedOutput]:
-        return [NamedOutput("wide_data", data.report)]
+        if (
+            "split_activities" in self._extra
+            and self._extra["split_activities"].lower() == "true"
+        ):
+            return [
+                NamedOutput(f"{activity[0]}-{activity[1]}", self._pivot(activity_df))
+                for activity, activity_df in data.report.with_columns(
+                    activity_id=pl.col("activity").struct.field("id"),
+                    activity_name=pl.col("activity").struct.field("name"),
+                )
+                .partition_by(
+                    ["activity_id", "activity_name"], include_key=False, as_dict=True
+                )
+                .items()
+            ]
+
+        return [NamedOutput("wide_data", self._pivot(data.report))]
 
 
 class LongDataFormat(Output):
@@ -248,20 +180,16 @@ class DataDictionaryFormat(Output):
                 "data_dictionary",
                 data.report.select(
                     "applet_version",
-                    pl.col("activity_flow")
-                    .struct.field("id")
-                    .alias("activity_flow_id"),
-                    pl.col("activity_flow")
-                    .struct.field("name")
-                    .alias("activity_flow_name"),
-                    pl.col("activity").struct.field("id").alias("activity_id"),
-                    pl.col("activity").struct.field("name").alias("activity_name"),
-                    pl.col("item").struct.field("id").alias("item_id"),
-                    pl.col("item").struct.field("name").alias("item_name"),
-                    pl.col("item").struct.field("prompt").alias("item_prompt"),
-                    pl.col("item")
-                    .struct.field("response_options")
-                    .alias("item_response_options"),
+                    activity_flow_id=pl.col("activity_flow").struct.field("id"),
+                    activity_flow_name=pl.col("activity_flow").struct.field("name"),
+                    activity_id=pl.col("activity").struct.field("id"),
+                    activity_name=pl.col("activity").struct.field("name"),
+                    item_id=pl.col("item").struct.field("id"),
+                    item_name=pl.col("item").struct.field("name"),
+                    item_prompt=pl.col("item").struct.field("prompt"),
+                    item_response_options=pl.col("item").struct.field(
+                        "response_options"
+                    ),
                 ).unique(),
             ),
         ]
@@ -283,19 +211,20 @@ class OptionsFormat(Output):
                 data.report.select(
                     "applet_version",
                     pl.col("activity_flow")
-                    .struct.field("id")
-                    .alias("activity_flow_id"),
-                    pl.col("activity_flow")
-                    .struct.field("name")
-                    .alias("activity_flow_name"),
-                    pl.col("activity").struct.field("id").alias("activity_id"),
-                    pl.col("activity").struct.field("name").alias("activity_name"),
-                    pl.col("item").struct.field("id").alias("item_id"),
-                    pl.col("item").struct.field("name").alias("item_name"),
-                    pl.col("item").struct.field("prompt").alias("item_prompt"),
-                    pl.col("item")
-                    .struct.field("response_options")
-                    .alias("item_response_options"),
+                    .struct.unnest()
+                    .name.prefix("activity_flow_"),
+                    pl.col("activity").struct.unnest().name.prefix("activity_"),
+                    pl.col("item").struct.unnest().name.prefix("item_"),
+                )
+                .select(
+                    "activity_flow_id",
+                    "activity_flow_name",
+                    "activity_id",
+                    "activity_name",
+                    "item_id",
+                    "item_name",
+                    "item_prompt",
+                    "item_response_options",
                 )
                 .unique()
                 .explode("item_response_options")
@@ -313,6 +242,7 @@ class ScoredResponsesFormat(Output):
     """Write scored responses to CSV."""
 
     NAME = "scored"
+    DEFAULT = False
 
     def _format(self, data: MindloggerData) -> list[NamedOutput]:
         return [
@@ -352,8 +282,15 @@ class YmhaAttendanceFormat(Output):
 
     NAME = "ymha-attendance"
 
+    DEFAULT = False
+
     def _participants(self) -> pl.DataFrame:
-        """Load participants from file path in extra args."""
+        """Load participants from file path in extra args.
+
+        Returns:
+            pl.DataFrame with columns:
+                secret_id, nickname, first_name, last_name, site, [room]
+        """
         if "ymha_participants" not in self._extra:
             raise MissingExtraArgumentError(
                 "YMHA Attendance Report requires ymha_participants parameter specified in 'extra' argument."
@@ -383,18 +320,12 @@ class YmhaAttendanceFormat(Output):
     def _attendance(
         self, df: pl.DataFrame, participants: pl.DataFrame
     ) -> list[NamedOutput]:
-        attendance = (
-            df.with_columns(
-                activity_date=pl.col("activity").struct.field("start_time").dt.date()
-            )
-            .drop("activity")
-            .pivot(
-                on="activity_name",
-                values="activity_completed",
-                sort_columns=True,
-                maintain_order=True,
-                aggregate_function=pl.element().any(),
-            )
+        attendance = df.pivot(
+            on="activity_name",
+            values="activity_completed",
+            sort_columns=True,
+            maintain_order=True,
+            aggregate_function=pl.element().any(),
         )
         dates = attendance.select(pl.col("activity_date").unique()).filter(
             pl.col("activity_date").is_not_null()
@@ -414,7 +345,7 @@ class YmhaAttendanceFormat(Output):
     def _completion(
         self, df: pl.DataFrame, participants: pl.DataFrame
     ) -> list[NamedOutput]:
-        completion = df.drop("activity").pivot(
+        completion = df.drop("activity_date").pivot(
             on="activity_name",
             values="activity_completed",
             aggregate_function=pl.element().any(),
@@ -474,23 +405,20 @@ class YmhaAttendanceFormat(Output):
         participants = self._participants()
 
         activities = (
-            data.report.drop(
-                "activity_flow",
-                "activity_schedule",
-                "account_user",
-                "input_user",
-                "source_user",
-                "response",
-            )
-            .group_by(["target_user", "activity"])
-            .agg(item_count=pl.col("item").count())
+            data.report.select("target_user", "activity", "activity_time", "item")
+            .group_by(["target_user", "activity", "activity_time"])
+            .agg(item_count=pl.col("item").struct.field("id").count())
             .with_columns(
                 secret_id=pl.col("target_user").struct.field("secret_id"),
                 activity_name=pl.col("activity").struct.field("name").str.strip_chars(),
+                activity_completed=pl.col("item_count").gt(0),
+                activity_date=pl.col("activity_time")
+                .struct.field("start_time")
+                .dt.date(),
             )
-            .with_columns(activity_completed=pl.col("item_count").gt(0))
-            .drop("target_user", "item_count")
+            .drop("target_user", "item_count", "activity", "activity_time")
         )
+        LOG.debug("Activities Columns: %s", activities.columns)
 
         partitioned_activities = activities.with_columns(
             is_ema=pl.col("activity_name").str.starts_with("Student Check")

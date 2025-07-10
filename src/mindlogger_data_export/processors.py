@@ -8,6 +8,7 @@ from typing import Protocol
 import polars as pl
 import polars.selectors as cs
 
+from . import schema
 from .parsers import OptionsParser, ResponseParser
 
 LOG = logging.getLogger(__name__)
@@ -103,11 +104,7 @@ class ResponseStructProcessor(ReportProcessor):
 
     NAME = "ResponseStruct"
     PARSER = ResponseParser()
-    RESPONSE_SCHEMA = {
-        "status": pl.String(),
-        "response": PARSER.datatype,
-        "raw_score": pl.String(),
-    }
+    COLUMNS = {"item_response_status", "rawScore", "item_response"}
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         return report.with_columns(
@@ -116,8 +113,8 @@ class ResponseStructProcessor(ReportProcessor):
                 pl.col("rawScore").alias("raw_score"),
                 pl.col("item_response")
                 .str.strip_chars()
-                .map_elements(self.PARSER.parse, self.PARSER.datatype)
-                .alias("response"),
+                .map_elements(self.PARSER.parse, schema.RESPONSE_VALUE_SCHEMA)
+                .alias("value"),
             )
         ).drop(
             "item_response_status",
@@ -135,33 +132,25 @@ class UserStructProcessor(ReportProcessor):
 
     NAME = "UserStruct"
 
-    USER_SCHEMA: dict[str, pl.DataType] = {
-        "id": pl.String(),
-        "secret_id": pl.String(),
-        "nickname": pl.String(),
-        "tag": pl.String(),
-        "relation": pl.String(),
-    }
-
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert user info to struct."""
         return report.with_columns(
             target_user=pl.struct(
                 cs.starts_with("target_").name.map(lambda c: c.replace("target_", "")),
-                schema=self.USER_SCHEMA,
+                schema=schema.USER_SCHEMA,
             ),
             source_user=pl.struct(
                 cs.starts_with("source_").name.map(lambda c: c.replace("source_", "")),
-                schema=self.USER_SCHEMA,
+                schema=schema.USER_SCHEMA,
             ),
             input_user=pl.struct(
                 cs.starts_with("input_").name.map(lambda c: c.replace("input_", "")),
-                schema=self.USER_SCHEMA,
+                schema=schema.USER_SCHEMA,
             ),
             account_user=pl.struct(
                 pl.col("userId").alias("id"),
                 pl.col("secret_user_id").alias("secret_id"),
-                schema=self.USER_SCHEMA,
+                schema=schema.USER_SCHEMA,
             ),
         ).drop(
             "^target_[^u].*$",
@@ -181,17 +170,14 @@ class ItemStructProcessor(ReportProcessor):
 
     NAME = "ItemStruct"
 
-    ITEM_SCHEMA: dict[str, pl.DataType] = {
-        "id": pl.String(),
-        "name": pl.String(),
-        "prompt": pl.String(),
-        "type": pl.String(),
-        "raw_options": pl.String(),
-        "response_options": pl.List(
-            pl.Struct({"name": pl.String(), "value": pl.Int64(), "score": pl.Int64()})
-        ),
-    }
     PARSER = OptionsParser()
+    COLUMNS = {
+        "item_id",
+        "item_name",
+        "item_prompt",
+        "item_type",
+        "item_response_options",
+    }
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert item info to struct."""
@@ -206,18 +192,12 @@ class ItemStructProcessor(ReportProcessor):
                 .str.strip_chars()
                 .map_elements(
                     self.PARSER.parse,
-                    pl.List(
-                        pl.Struct(
-                            {"name": pl.String, "value": pl.Int64, "score": pl.Int64}
-                        )
-                    ),
+                    schema.RESPONSE_OPTIONS_SCHEMA,
                 )
                 .alias("response_options"),
-                schema=self.ITEM_SCHEMA,
+                schema=schema.ITEM_SCHEMA,
             )
-        ).drop(
-            "item_id", "item_name", "item_prompt", "item_type", "item_response_options"
-        )
+        ).drop(self.COLUMNS)
 
 
 class ActivityFlowStructProcessor(ReportProcessor):
@@ -229,12 +209,6 @@ class ActivityFlowStructProcessor(ReportProcessor):
 
     NAME = "ActivityFlowStruct"
 
-    ACTIVITY_FLOW_SCHEMA: dict[str, pl.DataType] = {
-        "id": pl.String(),
-        "name": pl.String(),
-        "submission_id": pl.String(),
-    }
-
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert activity flow info to struct."""
         return report.with_columns(
@@ -242,7 +216,7 @@ class ActivityFlowStructProcessor(ReportProcessor):
                 pl.col("activity_flow_id").alias("id"),
                 pl.col("activity_flow_name").alias("name"),
                 pl.col("activity_flow_submission_id").alias("submission_id"),
-                schema=self.ACTIVITY_FLOW_SCHEMA,
+                schema=schema.ACTIVITY_FLOW_SCHEMA,
             )
         ).drop("activity_flow_id", "activity_flow_name", "activity_flow_submission_id")
 
@@ -250,20 +224,21 @@ class ActivityFlowStructProcessor(ReportProcessor):
 class ActivityStructProcessor(ReportProcessor):
     """Convert activity info to struct.
 
-    Input Columns: "activity_id", "activity_name"
-    Output Columns: "activity"
+    Input Columns:
+        activity_id, activity_name,
+        activity_submission_id, activity_submission_review_id, activity_start_time, activity_end_time
+    Output Columns: activity, activity_submission, activity_time
     """
 
     NAME = "ActivityStruct"
-
-    ACTIVITY_SCHEMA: dict[str, pl.DataType] = {
-        "id": pl.String(),
-        "name": pl.String(),
-        "submission_id": pl.String(),
-        "submission_review_id": pl.String(),
-        "start_time": pl.Datetime(time_zone="UTC"),
-        "end_time": pl.Datetime(time_zone="UTC"),
-    }
+    COLUMNS = [
+        "activity_id",
+        "activity_name",
+        "activity_submission_id",
+        "activity_submission_review_id",
+        "activity_start_time",
+        "activity_end_time",
+    ]
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert activity info to struct."""
@@ -271,20 +246,19 @@ class ActivityStructProcessor(ReportProcessor):
             activity=pl.struct(
                 pl.col("activity_id").alias("id"),
                 pl.col("activity_name").alias("name"),
-                pl.col("activity_submission_id").alias("submission_id"),
-                pl.col("activity_submission_review_id").alias("submission_review_id"),
+                schema=schema.ACTIVITY_SCHEMA,
+            ),
+            activity_submission=pl.struct(
+                pl.col("activity_submission_id").alias("id"),
+                pl.col("activity_submission_review_id").alias("review_id"),
+                schema=schema.ACTIVITY_SUBMISSION_SCHEMA,
+            ),
+            activity_time=pl.struct(
                 pl.col("activity_start_time").alias("start_time"),
                 pl.col("activity_end_time").alias("end_time"),
-                schema=self.ACTIVITY_SCHEMA,
-            )
-        ).drop(
-            "activity_id",
-            "activity_name",
-            "activity_submission_id",
-            "activity_submission_review_id",
-            "activity_start_time",
-            "activity_end_time",
-        )
+                schema=schema.ACTIVITY_TIME_SCHEMA,
+            ),
+        ).drop(self.COLUMNS)
 
 
 class ActivityScheduleStructProcessor(ReportProcessor):
@@ -296,12 +270,6 @@ class ActivityScheduleStructProcessor(ReportProcessor):
 
     NAME = "ActivityScheduleStruct"
 
-    ACTIVITY_SCHEDULE_SCHEMA: dict[str, pl.DataType] = {
-        "id": pl.String(),
-        "history_id": pl.String(),
-        "start_time": pl.Datetime(time_zone="UTC"),
-    }
-
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert activity schedule info to struct."""
         return report.with_columns(
@@ -309,7 +277,7 @@ class ActivityScheduleStructProcessor(ReportProcessor):
                 pl.col("activity_schedule_id").alias("id"),
                 pl.col("activity_schedule_history_id").alias("history_id"),
                 pl.col("activity_schedule_start_time").alias("start_time"),
-                schema=self.ACTIVITY_SCHEDULE_SCHEMA,
+                schema=schema.ACTIVITY_SCHEDULE_SCHEMA,
             )
         ).drop(
             "activity_schedule_id",
@@ -326,77 +294,31 @@ class SubscaleProcessor(ReportProcessor):
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Process subscale columns."""
-        df_cols = {
-            "target_id",
-            "target_secret_id",
-            "target_nickname",
-            "target_tag",
-            "source_id",
-            "source_secret_id",
-            "source_nickname",
-            "source_tag",
-            "source_relation",
-            "input_id",
-            "input_secret_id",
-            "input_nickname",
-            "userId",
-            "secret_user_id",
-            "applet_version",
-            "activity_flow_id",
-            "activity_flow_name",
-            "activity_flow_submission_id",
-            "activity_id",
-            "activity_name",
-            "activity_submission_id",
-            "activity_schedule_history_id",
-            "activity_start_time",
-            "activity_end_time",
-            "activity_schedule_id",
-            "activity_schedule_start_time",
-            "utc_timezone_offset",
-            "activity_submission_review_id",
-            "item_id",
-            "item_name",
-            "item_prompt",
-            "item_response_options",
-            "item_response",
-            "item_response_status",
-            "item_type",
-            "rawScore",
-        }
-        response_cols = {
-            "item_id",
-            "item_name",
-            "item_prompt",
-            "item_response_options",
-            "item_response",
-            "item_response_status",
-            "item_type",
-            "rawScore",
-        }
-        ss_value_cs = cs.starts_with("subscale_") | cs.by_name(
+        subscale_columns = cs.starts_with("subscale_") | cs.by_name(
             {"activity_score", "activity_score_lookup_text"}
         )
-
-        ssdf = (
-            report.select(pl.all().exclude(response_cols))
-            .unpivot(
-                on=ss_value_cs,
-                index=list(df_cols - response_cols),
-                variable_name="item_id",
-                value_name="item_response",
-            )
-            .filter(pl.col("item_response").is_not_null())
-            .with_columns(pl.lit("subscale").alias("item_type"))
-            .with_columns(item_name=pl.col("item_id").str.replace("subscale_name_", ""))
-            .with_columns(
-                pl.lit(None).alias(c).cast(pl.String)
-                for c in (
-                    response_cols
-                    - {"item_id", "item_name", "item_response", "item_type"}
-                )
-            )
-            .with_columns(pl.col("item_response").cast(pl.String))
+        index_columns = ~subscale_columns & ~cs.by_name(
+            ItemStructProcessor.COLUMNS, ResponseStructProcessor.COLUMNS
         )
+        LOG.debug(
+            "Subscale Columns: %s", ",\n".join(report.select(subscale_columns).columns)
+        )
+        LOG.debug("Index Columns: %s", ",\n".join(report.select(index_columns).columns))
 
-        return pl.concat([report.select(~ss_value_cs), ssdf], how="align")
+        return pl.concat(
+            [
+                report.select(~subscale_columns),
+                report.unpivot(
+                    index=index_columns,
+                    on=subscale_columns,
+                    variable_name="item_id",
+                    value_name="item_response",
+                )
+                .filter(pl.col("item_response").is_not_null())
+                .with_columns(
+                    item_type=pl.lit("subscale"),
+                    item_name=pl.col("item_id").str.replace("subscale_name_", ""),
+                ),
+            ],
+            how="diagonal_relaxed",
+        )

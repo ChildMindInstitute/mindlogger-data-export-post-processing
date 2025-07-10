@@ -23,28 +23,8 @@ class MindloggerData:
     """Data model of Mindlogger export."""
 
     def __init__(self, response_data: pl.DataFrame):
-        """Initialize MindloggerData object.
-
-        After preprocessing, the response_data should contain the following columns:
-        - applet_version: string
-        - utc_timezone_offset: pl.Duration
-        - response: pl.Struct(status, value, raw_score)
-        - target_user: pl.Struct(User)
-        - source_user: pl.Struct(User)
-        - input_user: pl.Struct(User)
-        - account_user: pl.Struct(User)
-        - item: pl.Struct(id, name, prompt, type, raw_options, response_options)
-        - activity_flow: pl.Struct(id, name, submission_id)
-        - activity: pl.Struct(id, name, submission_id, submission_review_id, start_time, end_time)
-        - activity_schedule: pl.Struct(id, history_id, start_time)
-
-        User structs should contain the following fields:
-        - id: string
-        - secret_id: string
-        - nickname: string
-        - relation: string
-        - tag: string
-        """
+        """Initialize MindloggerData object."""
+        LOG.debug("Response Data Columns: %s", response_data.columns)
         self._response_data = response_data
 
     @cached_property
@@ -103,65 +83,60 @@ class MindloggerData:
         return pl.DataFrame(
             self.report.select(
                 "applet_version",
-                "activity_flow_id",
-                "activity_flow_name",
-                "activity_id",
-                "activity_name",
-                "item_id",
-                "item_name",
-                "item_prompt",
-                "item_response_options",
+                pl.col("activity_flow").struct.unnest().name.prefix("activity_flow_"),
+                pl.col("activity").struct.unnest().name.prefix("activity_"),
+                pl.col("item").struct.unnest().name.prefix("item_"),
             ).unique()
         )
 
     @staticmethod
     def expand_options(df: pl.DataFrame) -> pl.DataFrame:
         """Expand options struct to columns."""
-        return (
-            df.explode(pl.col("parsed_options"))
-            .with_columns(
-                pl.col("parsed_options").struct.unnest().name.prefix("item_option_")
-            )
-            .unique()
-        )
+        return df.with_columns(
+            item_response_options=pl.col("item").struct.field("response_options")
+        ).explode("item_response_options")
 
     @staticmethod
     def expand_responses(df: pl.DataFrame) -> pl.DataFrame:
         """Expand responses struct to columns/rows."""
         return (
             df.with_columns(
-                pl.col("parsed_response").struct.unnest().name.prefix("item_response_")
+                # Unnest response struct
+                pl.col("response").struct.unnest().name.prefix("response_")
+            )
+            .with_columns(
+                pl.col("response_value").struct.unnest().name.prefix("response_value_")
             )
             # Expand value list to rows.
             .with_columns(
-                item_response_value_index=pl.int_ranges(
-                    pl.col("item_response_value").list.len()
+                response_value_value_index=pl.int_ranges(
+                    pl.col("response_value_value").list.len()
                 )
             )
-            .explode("item_response_value", "item_response_value_index")
+            .explode("response_value_value", "response_value_value_index")
             # Expand geo struct to lat/long columns.
             .with_columns(
-                pl.col("item_response_geo")
+                pl.col("response_value_geo")
                 .struct.unnest()
-                .name.prefix("item_response_geo_")
+                .name.prefix("response_value_geo_")
             )
             # Expand matrix list to rows.
-            .explode("item_response_matrix")
+            .explode("response_value_matrix")
             # Unnest matrix struct to columns.
             .with_columns(
-                pl.col("item_response_matrix")
+                pl.col("response_value_matrix")
                 .struct.unnest()
-                .name.prefix("item_response_matrix_")
+                .name.prefix("response_value_matrix_")
             )
             # Expand matrix value list to rows.
             .with_columns(
-                item_response_matrix_value_index=pl.int_ranges(
-                    pl.col("item_response_matrix_value").list.len()
+                response_value_matrix_value_index=pl.int_ranges(
+                    pl.col("response_value_matrix_value").list.len()
                 )
             )
-            .explode("item_response_matrix_value", "item_response_matrix_value_index")
+            .explode("response_value_matrix_value", "response_value_matrix_value_index")
             # Exclude temporary struct columns.
-            .select(pl.exclude("item_response_matrix", "item_response_geo"))
+            .select(pl.exclude("response_value_matrix", "response_value_geo"))
         )
 
     def _users(self, user_type: UserType) -> list[MindloggerUser]:

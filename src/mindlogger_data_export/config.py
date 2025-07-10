@@ -53,6 +53,8 @@ class OutputConfig:
     )
     """Logging level for the tool."""
 
+    drop_null_columns: Annotated[bool, arg(aliases=["-d"])] = False
+
     extra: Annotated[dict[str, str], arg(aliases=["-e"])] = field(default_factory=dict)
     """Additional parameters to be used for output-specific side-inputs, etc."""
 
@@ -67,4 +69,4 @@ class OutputConfig:
     @property
     def output_types_or_all(self) -> list[str]:
         """Get output types."""
-        return self.outputs or list(Output.TYPES.keys())
+        return self.outputs or [t[0] for t in Output.TYPES.items() if t[1].DEFAULT]

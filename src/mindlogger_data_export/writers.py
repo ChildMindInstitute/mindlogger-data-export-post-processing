@@ -60,7 +60,20 @@ class CsvWriter(OutputWriter):
             cs.duration().dt.total_milliseconds().name.suffix("_ms")
         ).drop(cs.duration())
 
-        # Drop all struct and list columns.
+        # Convert list cols to struct.
+        list_cols = [
+            pl.col(col)
+            for col, dtype in df.schema.items()
+            if dtype.base_type() == pl.List
+        ]
+        df = df.with_columns(pl.struct(c) for c in list_cols)
+
+        # Encode struct cols as JSON.
+        struct_cols = [
+            col for col, dtype in df.schema.items() if dtype.base_type() == pl.Struct
+        ]
+        df = df.with_columns(cs.by_name(struct_cols).struct.json_encode())
+
         df = df.drop(
             col
             for col, dtype in df.schema.items()
