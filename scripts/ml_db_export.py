@@ -17,25 +17,43 @@ def _():
 
 @app.cell(hide_code=True)
 def _(mo, os):
+    participants_file = mo.ui.file()
+    data_file = mo.ui.file()
+    run_button = mo.ui.run_button()
     output_dir = mo.ui.text()
+    filter_to_applet_name = mo.ui.text()
     mo.vstack(
         [
-            mo.md("## Output dir"),
-            mo.md(f"* Current dir: {os.getcwd()}"),
-            output_dir,
+            mo.hstack(
+                [mo.md("### Upload participants file"), participants_file],
+                justify="start",
+            ),
+            mo.hstack([mo.md("### Upload data file"), data_file], justify="start"),
+            mo.hstack(
+                [
+                    mo.md("### Output dir"),
+                    output_dir,
+                ],
+                justify="start",
+            ),
+            mo.hstack(
+                [mo.md("### Filter data to applet_name: "), filter_to_applet_name],
+                justify="start",
+            ),
+            mo.md(f"Current dir: {os.getcwd()}"),
+            run_button,
         ]
     )
-    return (output_dir,)
+    return (
+        data_file,
+        filter_to_applet_name,
+        output_dir,
+        participants_file,
+        run_button,
+    )
 
 
-@app.cell(hide_code=True)
-def _(mo):
-    participants_file = mo.ui.file()
-    mo.vstack([mo.md("## Upload participants file"), participants_file])
-    return (participants_file,)
-
-
-@app.cell(hide_code=True)
+@app.cell
 def _(OutputGenerationError, cs, mo, participants_file, pl, run_button):
     def load_participants(data) -> pl.DataFrame:
         """Load participants from file path in extra args."""
@@ -63,22 +81,8 @@ def _(OutputGenerationError, cs, mo, participants_file, pl, run_button):
     return (participants_data,)
 
 
-@app.cell(hide_code=True)
-def _(mo):
-    data_file = mo.ui.file()
-    mo.vstack([mo.md("## Upload data file"), data_file])
-    return (data_file,)
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    run_button = mo.ui.run_button()
-    run_button
-    return (run_button,)
-
-
-@app.cell(hide_code=True)
-def _(data_file, mo, pl, run_button):
+@app.cell
+def _(data_file, filter_to_applet_name, mo, pl, run_button):
     def load_data(mindlogger_data) -> pl.DataFrame:
         """Load data."""
         return (
@@ -87,6 +91,7 @@ def _(data_file, mo, pl, run_button):
                 # try_parse_dates=True,
                 # schema_overrides={"response_start_time": pl.Datetime()},
             )
+            .filter(pl.col("applet_name") == filter_to_applet_name.value)
             .select(
                 pl.col("activity_name"),
                 pl.col("secret_user_id").alias("secret_id"),
