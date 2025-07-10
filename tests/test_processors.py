@@ -10,7 +10,6 @@ from polars.testing import assert_frame_equal
 from mindlogger_data_export.parsers import ResponseTransformer
 from mindlogger_data_export.processors import (
     DateTimeProcessor,
-    OptionsStructProcessor,
     ResponseStructProcessor,
     SubscaleProcessor,
 )
@@ -208,40 +207,40 @@ def test_response_preprocessor_multi_row(responses, expected):
     assert processed_report["parsed_response"].to_list() == expected
 
 
-@pytest.mark.parametrize(
-    ("options_field", "expected"),
-    [
-        pytest.param(
-            "Max: 2, Min: 0",
-            [
-                {"name": "0", "value": 0, "score": 0},
-                {"name": "1", "value": 1, "score": 1},
-                {"name": "2", "value": 2, "score": 2},
-            ],
-            id="max_min",
-        ),
-        pytest.param(
-            "1: 0, 2: 1, 3: 2",
-            [
-                {"name": "1", "value": 0, "score": None},
-                {"name": "2", "value": 1, "score": None},
-                {"name": "3", "value": 2, "score": None},
-            ],
-            id="values",
-        ),
-    ],
-)
-def test_options_preprocessor(options_field, expected):
-    preprocessor = OptionsStructProcessor()
-    options = [options_field]
+# @pytest.mark.parametrize(
+#     ("options_field", "expected"),
+#     [
+#         pytest.param(
+#             "Max: 2, Min: 0",
+#             [
+#                 {"name": "0", "value": 0, "score": 0},
+#                 {"name": "1", "value": 1, "score": 1},
+#                 {"name": "2", "value": 2, "score": 2},
+#             ],
+#             id="max_min",
+#         ),
+#         pytest.param(
+#             "1: 0, 2: 1, 3: 2",
+#             [
+#                 {"name": "1", "value": 0, "score": None},
+#                 {"name": "2", "value": 1, "score": None},
+#                 {"name": "3", "value": 2, "score": None},
+#             ],
+#             id="values",
+#         ),
+#     ],
+# )
+# def test_options_preprocessor(options_field, expected):
+#     preprocessor = OptionsStructProcessor()
+#     options = [options_field]
 
-    processed_options = [expected]
+#     processed_options = [expected]
 
-    report = pl.DataFrame(
-        {"options": options},
-    )
-    processed_report = preprocessor._run(report)
-    assert processed_report["parsed_options"].to_list() == processed_options
+#     report = pl.DataFrame(
+#         {"options": options},
+#     )
+#     processed_report = preprocessor._run(report)
+#     assert processed_report["parsed_options"].to_list() == processed_options
 
 
 def test_subscale_processor():

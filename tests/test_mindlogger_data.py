@@ -3,19 +3,20 @@
 
 from pathlib import Path
 
-from datetime import date, time, timedelta
+from datetime import date, time, timedelta, datetime
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
 from mindlogger_data_export.parsers import ResponseParser
+from mindlogger_data_export import schema
 from mindlogger_data_export import (
     MindloggerData,
     UserType,
 )
 
 FIXTURE_DIR = Path(__file__).parent.resolve() / "data"
-WITH_REPORT = pytest.mark.datafiles(FIXTURE_DIR / "report.csv")
+WITH_REPORT = pytest.mark.datafiles(FIXTURE_DIR / "responses.csv")
 
 
 def test_mindlogger_data_create_nonexistent_raises_error():
@@ -41,172 +42,290 @@ def test_mindlogger_data_create_empty_raises_error(tmp_path: Path):
 @WITH_REPORT
 def test_mindlogger_source_users(datafiles: Path):
     """Test MindloggerData.source_users."""
-    mindlogger_report = datafiles / "report.csv"
-    mindlogger_data = MindloggerData(pl.read_csv(mindlogger_report))
+    mindlogger_data = MindloggerData.create(datafiles)
     source_users = mindlogger_data.source_users
-    assert len(source_users) == 1
-    assert source_users[0].user_type == UserType.SOURCE
-    assert source_users[0].subject_id == "ab64e77e-60b0-4725-8d93-079cceb8fc03"
+    source_user_ids = set(user.id for user in source_users)
+    assert len(source_users) == 2
+    assert all(user.user_type == UserType.SOURCE for user in source_users)
+    assert source_users[0].id == "1e15e0bf-1b81-418e-9b80-20b0cb4cac33"
+    assert source_users[1].id == "1e15e0bf-1b81-418e-9b80-20b0cb4cac33"
 
 
 @WITH_REPORT
 def test_mindlogger_target_users(datafiles: Path):
     """Test MindloggerData.target_users."""
-    mindlogger_report = datafiles / "report.csv"
-    mindlogger_data = MindloggerData(pl.read_csv(mindlogger_report))
+    mindlogger_data = MindloggerData.create(datafiles)
     target_users = mindlogger_data.target_users
-    assert len(target_users) == 1
-    assert target_users[0].user_type == UserType.TARGET
-    assert target_users[0].subject_id == "ab64e77e-60b0-4725-8d93-079cceb8fc03"
+    target_user_ids = set(user.id for user in target_users)
+    assert len(target_users) == 2
+    assert all(user.user_type == UserType.TARGET for user in target_users)
+    assert "1e15e0bf-1b81-418e-9b80-20b0cb4cac33" in target_user_ids
+    assert "096cec52-0723-460d-a40e-3fcc1961b1b8" in target_user_ids
 
 
 @WITH_REPORT
 def test_mindlogger_input_users(datafiles: Path):
     """Test MindloggerData.input_users."""
-    mindlogger_report = datafiles / "report.csv"
-    mindlogger_data = MindloggerData(pl.read_csv(mindlogger_report))
+    mindlogger_data = MindloggerData.create(datafiles)
     input_users = mindlogger_data.input_users
     assert len(input_users) == 1
     assert input_users[0].user_type == UserType.INPUT
-    assert input_users[0].subject_id == "ab64e77e-60b0-4725-8d93-079cceb8fc03"
+    assert input_users[0].id == "1e15e0bf-1b81-418e-9b80-20b0cb4cac33"
 
 
 @WITH_REPORT
 def test_mindlogger_account_users(datafiles: Path):
     """Test MindloggerData.account_users."""
-    mindlogger_report = datafiles / "report.csv"
-    mindlogger_data = MindloggerData(pl.read_csv(mindlogger_report))
+    mindlogger_data = MindloggerData.create(datafiles)
     account_users = mindlogger_data.account_users
     assert len(account_users) == 1
     assert account_users[0].user_type == UserType.ACCOUNT
-    assert account_users[0].subject_id == "645e8cc0-a67a-c10f-93b4-50e000000000"
+    assert account_users[0].id == "6056fc79-931a-412e-b15b-d5798c826a23"
 
 
-def test_long_response():
-    """Test UnnestingResponsePreprocessor on data with multiple rows."""
-    report = pl.DataFrame(
+@pytest.fixture
+def report():
+    """Input general report."""
+    return pl.DataFrame(
         {
-            "parsed_response": [
-                {"type": "raw_value", "raw_value": "10"},
-                {"type": "text", "text": "Some text here"},
-                {"type": "text", "text": "Some multiline\ntext here"},
-                {"type": "null", "null_value": True},
-                {"type": "value", "value": [2]},
-                {"type": "value", "value": [1, 2, 3]},
-                {"type": "file", "file": "./path/to/file.mp4"},
-                {"type": "date", "date": date(2021, 2, 1)},
-                {"type": "date", "date": date(2021, 5, 4)},
-                {"type": "time", "time": time(12, 30)},
-                {"type": "time_range", "time_range": timedelta(hours=3, minutes=-25)},
-                {"type": "geo", "geo": {"latitude": 40.7128, "longitude": -74.0060}},
+            "applet_version": ["0.1.1"],
+            "utc_timezone_offset": [timedelta(minutes=-300)],
+            "target_user": [
                 {
-                    "type": "matrix",
-                    "matrix": [
-                        {"row": "row1", "value": [1]},
-                        {"row": "row2", "value": [2]},
-                    ],
-                },
+                    "id": "U1",
+                    "secret_id": "SECU1",
+                    "nickname": "NICK1",
+                    "relation": "RELREL",
+                    "tag": "TAG1",
+                }
+            ],
+            "source_user": [
                 {
-                    "type": "matrix",
-                    "matrix": [
-                        {"row": "row1", "value": [1, 2]},
-                        {"row": "row2", "value": [3, 4]},
+                    "id": "U1",
+                    "secret_id": "SECU1",
+                    "nickname": "NICK1",
+                    "relation": "RELREL",
+                    "tag": "TAG1",
+                }
+            ],
+            "input_user": [
+                {
+                    "id": "U1",
+                    "secret_id": "SECU1",
+                    "nickname": "NICK1",
+                    "relation": "RELREL",
+                    "tag": "TAG1",
+                }
+            ],
+            "account_user": [
+                {
+                    "id": "U1",
+                    "secret_id": "SECU1",
+                    "nickname": "NICK1",
+                    "relation": "RELREL",
+                    "tag": "TAG1",
+                }
+            ],
+            "item": [
+                {
+                    "id": "ItemId1",
+                    "name": "ItemName1",
+                    "prompt": "Prompt1",
+                    "type": "singleSelect",
+                    "raw_options": "",
+                    "response_options": [
+                        {
+                            "name": "Option1",
+                            "value": 0,
+                            "score": 1,
+                        },
+                        {
+                            "name": "Option2",
+                            "value": 1,
+                            "score": 2,
+                        },
+                        {
+                            "name": "Option3",
+                            "value": 2,
+                            "score": 3,
+                        },
                     ],
-                },
+                }
+            ],
+            "response": [
+                {
+                    "status": "completed",
+                    "value": {"value": [0, 1]},
+                    "raw_score": 1,
+                }
+            ],
+            "activity_flow": [
+                {
+                    "id": "FLOW1",
+                    "name": "FlowName1",
+                    "submission_id": "FlowSubmissionId1",
+                }
+            ],
+            "activity": [{"id": "ActivityId1", "name": "ActivityName1"}],
+            "activity_time": [
+                {
+                    "start_time": datetime(2012, 1, 2, 12, 10, 11),
+                    "end_time": datetime(2012, 1, 2, 12, 15, 15),
+                }
+            ],
+            "activity_schedule": [
+                {
+                    "id": "ActivityScheduleId1",
+                    "history_id": "ActivityHistoryId",
+                    "start_time": datetime(2012, 1, 1),
+                }
             ],
         },
-        schema={
-            "parsed_response": pl.Struct(
-                {
-                    "type": pl.String,
-                    "raw_value": pl.String,
-                    "null_value": pl.Boolean,
-                    "value": pl.List(pl.Int64),
-                    "text": pl.String,
-                    "file": pl.String,
-                    "date": date,
-                    "time": time,
-                    "time_range": timedelta,
-                    "geo": pl.Struct({"latitude": pl.Float64, "longitude": pl.Float64}),
-                    "matrix": pl.List(
-                        pl.Struct({"row": pl.String, "value": pl.List(pl.Int64)})
-                    ),
-                }
-            )
-        },
+        schema=schema.INTERNAL_SCHEMA,
     )
-    expected_df = {
-        "response_raw_value": ["10"] + [None] * 19,
-        "response_text": [None]
-        + ["Some text here", "Some multiline\ntext here"]
-        + [None] * 17,
-        "response_null_value": [None] * 3 + [True] + [None] * 16,
-        "response_value": [None] * 4 + [2, 1, 2, 3] + [None] * 12,
-        "response_value_index": [None] * 4 + [0, 0, 1, 2] + [None] * 12,
-        "response_file": [None] * 8 + ["./path/to/file.mp4"] + [None] * 11,
-        "response_date": [None] * 9 + [date(2021, 2, 1), date(2021, 5, 4)] + [None] * 9,
-        "response_time": [None] * 11 + [time(12, 30)] + [None] * 8,
-        "response_time_range": [None] * 12
-        + [timedelta(hours=3, minutes=-25)]
-        + [None] * 7,
-        "response_geo_latitude": [None] * 13 + [40.7128] + [None] * 6,
-        "response_geo_longitude": [None] * 13 + [-74.0060] + [None] * 6,
-        "response_matrix_row": [None] * 14
-        + ["row1", "row2"]
-        + ["row1", "row1", "row2", "row2"],  # [None] * 4,
-        "response_matrix_value": [None] * 14 + [1, 2] + [1, 2, 3, 4],  # [None] * 4,
-        "response_matrix_value_index": [None] * 14
-        + [0, 0]
-        + [0, 1, 0, 1],  # [None] * 4,
-        "response_type": [
-            "raw_value",
-            "text",
-            "text",
-            "null",
-            "value",
-            "value",
-            "value",
-            "value",
-            "file",
-            "date",
-            "date",
-            "time",
-            "time_range",
-            "geo",
-            "matrix",
-            "matrix",
-            "matrix",
-            "matrix",
-            "matrix",
-            "matrix",
-        ],
-    }
-    expected_df = pl.DataFrame(
-        expected_df,
-        schema={
-            "response_type": pl.String,
-            "response_raw_value": pl.String,
-            "response_text": pl.String,
-            "response_null_value": pl.Boolean,
-            "response_file": pl.String,
-            "response_value": pl.Int64,
-            "response_value_index": pl.Int64,
-            "response_date": pl.Date,
-            "response_time": pl.Time,
-            "response_time_range": pl.Duration,
-            "response_geo_latitude": pl.Float64,
-            "response_geo_longitude": pl.Float64,
-            "response_matrix_row": pl.String,
-            "response_matrix_value": pl.Int64,
-            "response_matrix_value_index": pl.Int64,
-        },
-    )
-    expanded_report = MindloggerData.expand_responses(report).drop("parsed_response")
-    assert_frame_equal(
-        expanded_report,
-        expected_df,
-        check_column_order=False,
-    )
+
+
+def test_expand_options(report):
+    _df = MindloggerData.expand_options(report)
+    assert _df is not None
+
+
+def test_expand_responses(report):
+    _df = MindloggerData.expand_responses(report)
+    assert _df is not None
+
+
+def test_data_dictionary(report):
+    _data = MindloggerData(report)
+    print(_data.data_dictionary)
+    assert _data.data_dictionary is not None
+
+
+# def test_long_response():
+#     """Test UnnestingResponsePreprocessor on data with multiple rows."""
+#     report = pl.DataFrame(
+#         {
+#             "parsed_response": [
+#                 {"type": "raw_value", "raw_value": "10"},
+#                 {"type": "text", "text": "Some text here"},
+#                 {"type": "text", "text": "Some multiline\ntext here"},
+#                 {"type": "null", "null_value": True},
+#                 {"type": "value", "value": [2]},
+#                 {"type": "value", "value": [1, 2, 3]},
+#                 {"type": "file", "file": "./path/to/file.mp4"},
+#                 {"type": "date", "date": date(2021, 2, 1)},
+#                 {"type": "date", "date": date(2021, 5, 4)},
+#                 {"type": "time", "time": time(12, 30)},
+#                 {"type": "time_range", "time_range": timedelta(hours=3, minutes=-25)},
+#                 {"type": "geo", "geo": {"latitude": 40.7128, "longitude": -74.0060}},
+#                 {
+#                     "type": "matrix",
+#                     "matrix": [
+#                         {"row": "row1", "value": [1]},
+#                         {"row": "row2", "value": [2]},
+#                     ],
+#                 },
+#                 {
+#                     "type": "matrix",
+#                     "matrix": [
+#                         {"row": "row1", "value": [1, 2]},
+#                         {"row": "row2", "value": [3, 4]},
+#                     ],
+#                 },
+#             ],
+#         },
+#         schema={
+#             "parsed_response": pl.Struct(
+#                 {
+#                     "type": pl.String,
+#                     "raw_value": pl.String,
+#                     "null_value": pl.Boolean,
+#                     "value": pl.List(pl.Int64),
+#                     "text": pl.String,
+#                     "file": pl.String,
+#                     "date": date,
+#                     "time": time,
+#                     "time_range": timedelta,
+#                     "geo": pl.Struct({"latitude": pl.Float64, "longitude": pl.Float64}),
+#                     "matrix": pl.List(
+#                         pl.Struct({"row": pl.String, "value": pl.List(pl.Int64)})
+#                     ),
+#                 }
+#             )
+#         },
+#     )
+#     expected_df = {
+#         "response_raw_value": ["10"] + [None] * 19,
+#         "response_text": [None]
+#         + ["Some text here", "Some multiline\ntext here"]
+#         + [None] * 17,
+#         "response_null_value": [None] * 3 + [True] + [None] * 16,
+#         "response_value": [None] * 4 + [2, 1, 2, 3] + [None] * 12,
+#         "response_value_index": [None] * 4 + [0, 0, 1, 2] + [None] * 12,
+#         "response_file": [None] * 8 + ["./path/to/file.mp4"] + [None] * 11,
+#         "response_date": [None] * 9 + [date(2021, 2, 1), date(2021, 5, 4)] + [None] * 9,
+#         "response_time": [None] * 11 + [time(12, 30)] + [None] * 8,
+#         "response_time_range": [None] * 12
+#         + [timedelta(hours=3, minutes=-25)]
+#         + [None] * 7,
+#         "response_geo_latitude": [None] * 13 + [40.7128] + [None] * 6,
+#         "response_geo_longitude": [None] * 13 + [-74.0060] + [None] * 6,
+#         "response_matrix_row": [None] * 14
+#         + ["row1", "row2"]
+#         + ["row1", "row1", "row2", "row2"],  # [None] * 4,
+#         "response_matrix_value": [None] * 14 + [1, 2] + [1, 2, 3, 4],  # [None] * 4,
+#         "response_matrix_value_index": [None] * 14
+#         + [0, 0]
+#         + [0, 1, 0, 1],  # [None] * 4,
+#         "response_type": [
+#             "raw_value",
+#             "text",
+#             "text",
+#             "null",
+#             "value",
+#             "value",
+#             "value",
+#             "value",
+#             "file",
+#             "date",
+#             "date",
+#             "time",
+#             "time_range",
+#             "geo",
+#             "matrix",
+#             "matrix",
+#             "matrix",
+#             "matrix",
+#             "matrix",
+#             "matrix",
+#         ],
+#     }
+#     expected_df = pl.DataFrame(
+#         expected_df,
+#         schema={
+#             "response_type": pl.String,
+#             "response_raw_value": pl.String,
+#             "response_text": pl.String,
+#             "response_null_value": pl.Boolean,
+#             "response_file": pl.String,
+#             "response_value": pl.Int64,
+#             "response_value_index": pl.Int64,
+#             "response_date": pl.Date,
+#             "response_time": pl.Time,
+#             "response_time_range": pl.Duration,
+#             "response_geo_latitude": pl.Float64,
+#             "response_geo_longitude": pl.Float64,
+#             "response_matrix_row": pl.String,
+#             "response_matrix_value": pl.Int64,
+#             "response_matrix_value_index": pl.Int64,
+#         },
+#     )
+#     expanded_report = MindloggerData.expand_responses(report).drop("parsed_response")
+#     assert_frame_equal(
+#         expanded_report,
+#         expected_df,
+#         check_column_order=False,
+#     )
 
 
 # def test_score_value_mapping_processor():

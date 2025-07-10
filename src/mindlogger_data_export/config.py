@@ -37,7 +37,9 @@ class OutputConfig:
     output_dir: Annotated[Path | None, arg(aliases=["-o"])] = None
     """Path to output directory, where processed data will be written. Defaults to input_dir."""
 
-    output_format: Annotated[Literal["csv", "parquet"], arg(aliases=["-f"])] = "csv"
+    output_format: Annotated[
+        Literal["csv", "parquet", "excel"], arg(aliases=["-f"])
+    ] = "csv"
 
     outputs: Annotated[
         UseAppendAction[list[str]],
@@ -51,6 +53,11 @@ class OutputConfig:
     )
     """Logging level for the tool."""
 
+    drop_null_columns: Annotated[bool, arg(aliases=["-d"])] = False
+
+    extra: Annotated[dict[str, str], arg(aliases=["-e"])] = field(default_factory=dict)
+    """Additional parameters to be used for output-specific side-inputs, etc."""
+
     timezone: str = "America/New_York"
     """Timezone to which datetimes will be converted."""
 
@@ -62,4 +69,4 @@ class OutputConfig:
     @property
     def output_types_or_all(self) -> list[str]:
         """Get output types."""
-        return self.outputs or list(Output.TYPES.keys())
+        return self.outputs or [t[0] for t in Output.TYPES.items() if t[1].DEFAULT]

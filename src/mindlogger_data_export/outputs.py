@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
+from abc import ABC
+from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Protocol
+from pathlib import Path
 
 import polars as pl
 import polars.selectors as cs
 
 from .mindlogger import MindloggerData
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass
@@ -19,12 +24,26 @@ class NamedOutput:
     output: pl.DataFrame
 
 
-class Output(Protocol):
+class MissingExtraArgumentError(Exception):
+    """Error class for output that requires an extra argument."""
+
+
+class OutputGenerationError(Exception):
+    """Generic error encountered in output generation."""
+
+
+class Output(ABC):
     """Protocol for output writers."""
 
     NAME: str
 
     TYPES: dict[str, type[Output]] = {}
+
+    DEFAULT: bool = True
+
+    def __init__(self, extra: dict[str, str] | None = None) -> None:
+        """Initialize with dict for extra args."""
+        self._extra = extra if extra is not None else {}
 
     def __init_subclass__(cls, **kwargs):
         """Register preprocessor subclasses."""
@@ -44,59 +63,110 @@ class Output(Protocol):
         """Print information about output types."""
         return {k: v.__doc__ for k, v in cls.TYPES.items() if v.__doc__}
 
+    def unnest_structs(self, struct_cols: list[str]) -> Generator[pl.Expr, None, None]:
+        """Unnest struct columns and prefix resulting columns with '<column_name>_'."""
+        for sc in struct_cols:
+            yield pl.col(sc).struct.unnest().name.prefix(f"{sc}_")
 
-class WideActivityDataFormat(Output):
-    """Write wide data to CSV."""
 
-    NAME = "wide-activity"
+class WideFormat(Output):
+    """Wide data format with all parsed nested types unnested / exploded."""
 
-    index_columns = [
-        "userId",
-        "activity_submission_id",
-        "secret_user_id",
-        "source_user_secret_id",
-        "target_user_secret_id",
-        "input_user_secret_id",
-        "activity_start_time_dt",
-        "activity_end_time_dt",
-        "activity_scheduled_time_dt",
-        "activity_flow_id",
-        "activity_flow_name",
-        "activity_id",
-        "event_id",
-        "version",
-    ]
+    NAME = "wide"
 
-    pivot_columns = [
-        "activity_name",
-        "item",
-        "item_id",
-        "response_value_index",
-        "response_matrix_row",
-        "response_matrix_value_index",
-        "response_type",
-    ]
+    def _pivot(self, df: pl.DataFrame) -> pl.DataFrame:
+        df = (
+            df.with_columns(
+                item=pl.concat_str(
+                    pl.col("item").struct.field("id", "name"),
+                    separator="_",
+                    ignore_nulls=True,
+                ),
+                response_value=pl.col("response").struct.field("value"),
+                response_raw_score=pl.col("response").struct.field("raw_score"),
+            )
+            .with_columns(self.unnest_structs(["response_value"]))
+            .drop("response_value_matrix", "response_value_geo")
+            .with_columns(pl.col("response_value_value").fill_null(pl.lit([])))
+        )
+        max_value_len = df.select(pl.col("response_value_value").list.len().max())[
+            0, "response_value_value"
+        ]
 
-    def _format(self, data: MindloggerData) -> list[NamedOutput]:
-        return [
-            NamedOutput(
-                "wide_data",
-                data.long_response_report.with_columns(
-                    pl.col(self.pivot_columns).fill_null("")
-                ).pivot(
-                    on=self.pivot_columns,
-                    index=self.index_columns,
-                    values=cs.starts_with("response_"),
-                    sort_columns=True,
+        df = (
+            df.with_columns(
+                pl.col("response_value_value").list.to_struct(
+                    n_field_strategy="max_width", upper_bound=max_value_len
+                )
+            )
+            .with_columns(self.unnest_structs(["response_value_value"]))
+            .drop(
+                "response",
+                "response_value",
+                "response_value_type",
+                "response_value_value",
+            )
+        )
+        return (
+            df.pivot(
+                on="item",
+                values=cs.starts_with("response_"),
+            )
+            .with_columns(
+                self.unnest_structs(
+                    [
+                        "activity_time",
+                        "account_user",
+                        "target_user",
+                        "source_user",
+                        "input_user",
+                        "activity",
+                        "activity_flow",
+                        "activity_submission",
+                        "activity_schedule",
+                    ]
                 ),
             )
-        ]
+            .drop(
+                "activity_time",
+                "account_user",
+                "target_user",
+                "source_user",
+                "input_user",
+                "activity",
+                "activity_flow",
+                "activity_schedule",
+                "activity_submission",
+            )
+        )
+
+    def _format(self, data: MindloggerData) -> list[NamedOutput]:
+        if (
+            "split_activities" in self._extra
+            and self._extra["split_activities"].lower() == "true"
+        ):
+            return [
+                NamedOutput(f"{activity[0]}-{activity[1]}", self._pivot(activity_df))
+                for activity, activity_df in data.report.with_columns(
+                    activity_id=pl.col("activity").struct.field("id"),
+                    activity_name=pl.col("activity").struct.field("name"),
+                )
+                .partition_by(
+                    ["activity_id", "activity_name"], include_key=False, as_dict=True
+                )
+                .items()
+            ]
+
+        return [NamedOutput("wide_data", self._pivot(data.report))]
 
 
 class LongDataFormat(Output):
     """Long data format with all parsed nested types unnested / exploded."""
 
     NAME = "long"
+
+    def _format(self, data: MindloggerData) -> list[NamedOutput]:
+        return [NamedOutput("long_data", data.long_response_report)]
 
 
 class DataDictionaryFormat(Output):
@@ -109,24 +179,28 @@ class DataDictionaryFormat(Output):
             NamedOutput(
                 "data_dictionary",
                 data.report.select(
-                    "version",
-                    "activity_flow_id",
-                    "activity_flow_name",
-                    "activity_id",
-                    "activity_name",
-                    "item_id",
-                    "item",
-                    "prompt",
-                    "options",
-                )
-                .unique()
-                .filter(pl.col("item_id").is_not_null()),
-            )
+                    "applet_version",
+                    activity_flow_id=pl.col("activity_flow").struct.field("id"),
+                    activity_flow_name=pl.col("activity_flow").struct.field("name"),
+                    activity_id=pl.col("activity").struct.field("id"),
+                    activity_name=pl.col("activity").struct.field("name"),
+                    item_id=pl.col("item").struct.field("id"),
+                    item_name=pl.col("item").struct.field("name"),
+                    item_prompt=pl.col("item").struct.field("prompt"),
+                    item_response_options=pl.col("item").struct.field(
+                        "response_options"
+                    ),
+                ).unique(),
+            ),
         ]
 
 
 class OptionsFormat(Output):
-    """Write options."""
+    """Options format represents the item options.
+
+    Options format is similar to data dictionary format, but with one row per
+    option and a separate column for the name, value and score of each option.
+    """
 
     NAME = "options"
 
@@ -135,24 +209,32 @@ class OptionsFormat(Output):
             NamedOutput(
                 "options",
                 data.report.select(
-                    "version",
+                    "applet_version",
+                    pl.col("activity_flow")
+                    .struct.unnest()
+                    .name.prefix("activity_flow_"),
+                    pl.col("activity").struct.unnest().name.prefix("activity_"),
+                    pl.col("item").struct.unnest().name.prefix("item_"),
+                )
+                .select(
                     "activity_flow_id",
                     "activity_flow_name",
                     "activity_id",
                     "activity_name",
                     "item_id",
-                    "item",
-                    "prompt",
-                    "options",
-                    "parsed_options",
+                    "item_name",
+                    "item_prompt",
+                    "item_response_options",
                 )
                 .unique()
-                .explode(pl.col("parsed_options"))
+                .explode("item_response_options")
                 .with_columns(
-                    pl.col("parsed_options").struct.unnest().name.prefix("option_")
+                    pl.col("item_response_options")
+                    .struct.unnest()
+                    .name.prefix("item_option_")
                 )
-                .unique(),
-            )
+                .drop("item_response_options"),
+            ),
         ]
 
 
@@ -160,15 +242,194 @@ class ScoredResponsesFormat(Output):
     """Write scored responses to CSV."""
 
     NAME = "scored"
+    DEFAULT = False
 
     def _format(self, data: MindloggerData) -> list[NamedOutput]:
         return [
             NamedOutput(
                 "scored_responses",
                 data.long_report.filter(  # Filter out rows where option_score does not match response_value.
-                    pl.col("option_value")
+                    pl.col("item_option_value")
                     .cast(pl.String)
-                    .eq_missing(pl.col("response_value"))
+                    .eq_missing(pl.col("item_response_value"))
                 ),
             )
         ]
+
+
+class YmhaAttendanceFormat(Output):
+    """YMHA attendance format.
+
+    Outputs attendance and completion records for YMHA 2025 Mindlogger data.
+
+    Running this output requires an additional parameter specified in the command line via the 'extra'
+    keyword arguments:
+    `-e ymha_participants <filepath to participants csv>`
+
+    Participants CSV should contain the following columns at minimum:
+    nickname,firstName,lastName,secretUserId,site
+
+    Attendance records are computed on "Student Check-Ins" and "Student Check-Outs" activities.
+    Attendance records are partitioned by site and date, and contain a boolean column for each activity indicating
+    whether that activity was completed on that date.
+
+    Completion records are computed on all other activities.
+    Completion records are partitioned by site only, and contain boolean columns for all activities indicating whether
+    that activity has been completed by the given participant.
+
+    Activity completion is based on presence of any responses from that activity in the data.
+    """
+
+    NAME = "ymha-attendance"
+
+    DEFAULT = False
+
+    def _participants(self) -> pl.DataFrame:
+        """Load participants from file path in extra args.
+
+        Returns:
+            pl.DataFrame with columns:
+                secret_id, nickname, first_name, last_name, site, [room]
+        """
+        if "ymha_participants" not in self._extra:
+            raise MissingExtraArgumentError(
+                "YMHA Attendance Report requires ymha_participants parameter specified in 'extra' argument."
+            )
+        participants_path = Path(self._extra["ymha_participants"])
+        if not participants_path.is_file():
+            raise FileNotFoundError("YMHA Participants file not found.")
+
+        participants = pl.read_csv(participants_path)
+        if "site" not in participants.columns:
+            raise OutputGenerationError(
+                "'site' column not found in YMHA participants file"
+            )
+        if "secretUserId" not in participants.columns:
+            raise OutputGenerationError(
+                "'secretUserId' column not found in YMHA participants file"
+            )
+        return participants.select(
+            pl.col("secretUserId").alias("secret_id"),
+            pl.col("nickname"),
+            pl.col("firstName").alias("first_name"),
+            pl.col("lastName").alias("last_name"),
+            "site",
+            cs.matches("^room$"),
+        )
+
+    def _attendance(
+        self, df: pl.DataFrame, participants: pl.DataFrame
+    ) -> list[NamedOutput]:
+        attendance = df.pivot(
+            on="activity_name",
+            values="activity_completed",
+            sort_columns=True,
+            maintain_order=True,
+            aggregate_function=pl.element().any(),
+        )
+        dates = attendance.select(pl.col("activity_date").unique()).filter(
+            pl.col("activity_date").is_not_null()
+        )
+        participant_dates = participants.join(dates, how="cross")
+        all_attendance = participant_dates.join(
+            attendance,
+            on=["secret_id", "activity_date"],
+            how="left",
+        ).with_columns(pl.col("^Student Check.*$").fill_null(False))  # noqa: FBT003
+        part_dfs = all_attendance.partition_by(["site", "activity_date"], as_dict=True)
+        return [NamedOutput("ymha_attendance-all", all_attendance)] + [
+            NamedOutput(f"ymha_attendance-site_{part[0]}-date_{part[1]}", df)
+            for part, df in part_dfs.items()
+        ]
+
+    def _completion(
+        self, df: pl.DataFrame, participants: pl.DataFrame
+    ) -> list[NamedOutput]:
+        completion = df.drop("activity_date").pivot(
+            on="activity_name",
+            values="activity_completed",
+            aggregate_function=pl.element().any(),
+            maintain_order=True,
+            sort_columns=True,
+        )
+        activity_col_selector = cs.exclude(
+            [
+                "secret_id",
+                "nickname",
+                "first_name",
+                "last_name",
+                "site",
+                cs.matches("^room$"),
+            ]
+        )
+        identifier_col_selector = cs.by_name(
+            "secret_id",
+            "nickname",
+            "first_name",
+            "last_name",
+            "site",
+        ) | cs.matches(r"^room$")
+        all_completion = (
+            participants.join(completion, on="secret_id", how="left")
+            .select(
+                identifier_col_selector,
+                activity_col_selector.fill_null(False),  # noqa: FBT003
+            )
+            .with_columns(
+                complete=pl.concat_list(activity_col_selector).list.all(),
+            )
+        )
+        site_completion = all_completion.partition_by("site", as_dict=True)
+        return (
+            [
+                NamedOutput("ymha_completion-all", all_completion),
+                NamedOutput(
+                    "ymha_completion_summary-all",
+                    all_completion.select(identifier_col_selector, "complete"),
+                ),
+            ]
+            + [
+                NamedOutput(f"ymha_completion-site_{part[0]}", df)
+                for part, df in site_completion.items()
+            ]
+            + [
+                NamedOutput(
+                    f"ymha_completion_summary-site_{part[0]}",
+                    df.select(identifier_col_selector, "complete"),
+                )
+                for part, df in site_completion.items()
+            ]
+        )
+
+    def _format(self, data: MindloggerData) -> list[NamedOutput]:
+        participants = self._participants()
+
+        activities = (
+            data.report.select("target_user", "activity", "activity_time", "item")
+            .group_by(["target_user", "activity", "activity_time"])
+            .agg(item_count=pl.col("item").struct.field("id").count())
+            .with_columns(
+                secret_id=pl.col("target_user").struct.field("secret_id"),
+                activity_name=pl.col("activity").struct.field("name").str.strip_chars(),
+                activity_completed=pl.col("item_count").gt(0),
+                activity_date=pl.col("activity_time")
+                .struct.field("start_time")
+                .dt.date(),
+            )
+            .drop("target_user", "item_count", "activity", "activity_time")
+        )
+        LOG.debug("Activities Columns: %s", activities.columns)
+
+        partitioned_activities = activities.with_columns(
+            is_ema=pl.col("activity_name").str.starts_with("Student Check")
+        ).partition_by("is_ema", as_dict=True, include_key=False)
+
+        return (
+            self._attendance(partitioned_activities[(True,)], participants)
+            if (True,) in partitioned_activities
+            else []
+        ) + (
+            self._completion(partitioned_activities[(False,)], participants)
+            if (False,) in partitioned_activities
+            else []
+        )

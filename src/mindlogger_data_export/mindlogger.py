@@ -6,7 +6,6 @@ import logging
 from functools import cached_property
 from pathlib import Path
 
-import pandas as pd
 import polars as pl
 
 from .models import MindloggerUser, UserType
@@ -14,42 +13,39 @@ from .processors import ReportProcessor
 
 LOG = logging.getLogger(__name__)
 
-MINDLOGGER_REPORT_PATTERN = "report*.csv"
+MINDLOGGER_REPORT_PATTERN = "*responses*.csv"
+ACTIVITY_FLOW_PATTERN = "activity_flow*.csv"
+FLOW_ITEM_HISTORY_PATTERN = "flow_item_history*.csv"
+SCHEDULE_HISTORY_PATTERN = "schedule_history*.csv"
 
 
 class MindloggerData:
     """Data model of Mindlogger export."""
 
-    def __init__(self, report: pl.DataFrame):
+    def __init__(self, response_data: pl.DataFrame):
         """Initialize MindloggerData object."""
-        self._report_frame = report
+        LOG.debug("Response Data Columns: %s", response_data.columns)
+        self._response_data = response_data
 
-    @property
+    @cached_property
     def report(self) -> pl.DataFrame:
         """Get report DataFrame."""
-        return pl.DataFrame(self._report_frame)
+        return pl.DataFrame(self._response_data)
 
-    @property
-    def report_pd(self) -> pd.DataFrame:
-        """Get report DataFrame in Pandas format."""
-        return self._report_frame.to_pandas()
-
-    @property
+    @cached_property
     def long_options_report(self) -> pl.DataFrame:
         """Get report DataFrame with one option value per row, e.g. exploded data dictionary format."""
         return MindloggerData.expand_options(self.report)
 
-    @property
+    @cached_property
     def long_response_report(self) -> pl.DataFrame:
         """Get report DataFrame with one response value per row."""
         return MindloggerData.expand_responses(self.report)
 
-    @property
+    @cached_property
     def long_report(self) -> pl.DataFrame:
         """Get report DataFrame with one response value per row."""
-        return MindloggerData.expand_options(
-            MindloggerData.expand_responses(self.report)
-        )
+        return MindloggerData.expand_options(self.long_response_report)
 
     @cached_property
     def input_users(self) -> list[MindloggerUser]:
@@ -81,72 +77,66 @@ class MindloggerData:
             UserType.ACCOUNT: self.account_users,
         }
 
-    @property
+    @cached_property
     def data_dictionary(self) -> pl.DataFrame:
         """Return unique items in report."""
         return pl.DataFrame(
-            self._report_frame.select(
-                "version",
-                "activity_flow_id",
-                "activity_flow_name",
-                "activity_id",
-                "activity_name",
-                "item_id",
-                "item",
-                "prompt",
-                "options",
+            self.report.select(
+                "applet_version",
+                pl.col("activity_flow").struct.unnest().name.prefix("activity_flow_"),
+                pl.col("activity").struct.unnest().name.prefix("activity_"),
+                pl.col("item").struct.unnest().name.prefix("item_"),
             ).unique()
         )
-
-    @property
-    def data_dictionary_pd(self) -> pd.DataFrame:
-        """Return unique items in report in Pandas format."""
-        return self.data_dictionary.to_pandas()
 
     @staticmethod
     def expand_options(df: pl.DataFrame) -> pl.DataFrame:
         """Expand options struct to columns."""
-        return (
-            df.explode(pl.col("parsed_options"))
-            .with_columns(
-                pl.col("parsed_options").struct.unnest().name.prefix("option_")
-            )
-            .unique()
-        )
+        return df.with_columns(
+            item_response_options=pl.col("item").struct.field("response_options")
+        ).explode("item_response_options")
 
     @staticmethod
     def expand_responses(df: pl.DataFrame) -> pl.DataFrame:
         """Expand responses struct to columns/rows."""
         return (
             df.with_columns(
-                pl.col("parsed_response").struct.unnest().name.prefix("response_")
+                # Unnest response struct
+                pl.col("response").struct.unnest().name.prefix("response_")
+            )
+            .with_columns(
+                pl.col("response_value").struct.unnest().name.prefix("response_value_")
             )
             # Expand value list to rows.
             .with_columns(
-                response_value_index=pl.int_ranges(pl.col("response_value").list.len())
+                response_value_value_index=pl.int_ranges(
+                    pl.col("response_value_value").list.len()
+                )
             )
-            .explode("response_value", "response_value_index")
+            .explode("response_value_value", "response_value_value_index")
             # Expand geo struct to lat/long columns.
             .with_columns(
-                pl.col("response_geo").struct.unnest().name.prefix("response_geo_")
+                pl.col("response_value_geo")
+                .struct.unnest()
+                .name.prefix("response_value_geo_")
             )
             # Expand matrix list to rows.
-            .explode("response_matrix")
+            .explode("response_value_matrix")
             # Unnest matrix struct to columns.
             .with_columns(
-                pl.col("response_matrix")
+                pl.col("response_value_matrix")
                 .struct.unnest()
-                .name.prefix("response_matrix_")
+                .name.prefix("response_value_matrix_")
             )
             # Expand matrix value list to rows.
             .with_columns(
-                response_matrix_value_index=pl.int_ranges(
-                    pl.col("response_matrix_value").list.len()
+                response_value_matrix_value_index=pl.int_ranges(
+                    pl.col("response_value_matrix_value").list.len()
                 )
             )
-            .explode("response_matrix_value", "response_matrix_value_index")
+            .explode("response_value_matrix_value", "response_value_matrix_value_index")
             # Exclude temporary struct columns.
-            .select(pl.exclude("response_matrix", "response_geo"))
+            .select(pl.exclude("response_value_matrix", "response_value_geo"))
         )
 
     def _users(self, user_type: UserType) -> list[MindloggerUser]:
@@ -154,17 +144,13 @@ class MindloggerData:
         return list(
             map(
                 MindloggerUser.from_struct_factory(user_type),
-                self._report_frame.select(
-                    user_info=pl.struct(*UserType.columns(user_type))
-                )
-                .get_column("user_info")
-                .unique(),
+                self.report.get_column(user_type.value).unique(),
             )
         )
 
     def __str__(self):
         """Return string representation of MindloggerData object reporting column names and report head."""
-        return f"MindloggerData: {self._report_frame.columns}\n\n{self._report_frame.head()}"
+        return f"MindloggerData: {self._response_data.columns}\n\n{self._response_data.head()}"
 
     @classmethod
     def load(cls, input_dir: Path) -> pl.DataFrame:
