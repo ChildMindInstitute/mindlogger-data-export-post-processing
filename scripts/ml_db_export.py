@@ -85,14 +85,17 @@ def _(OutputGenerationError, cs, mo, participants_file, pl, run_button):
 def _(data_file, filter_to_applet_name, mo, pl, run_button):
     def load_data(mindlogger_data) -> pl.DataFrame:
         """Load data."""
-        return (
-            pl.read_csv(
-                mindlogger_data,
-                # try_parse_dates=True,
-                # schema_overrides={"response_start_time": pl.Datetime()},
+        ml_data = pl.read_csv(
+            mindlogger_data,
+            # try_parse_dates=True,
+            # schema_overrides={"response_start_time": pl.Datetime()},
+        )
+        if filter_to_applet_name.value:
+            ml_data = ml_data.filter(
+                pl.col("applet_name") == filter_to_applet_name.value
             )
-            .filter(pl.col("applet_name") == filter_to_applet_name.value)
-            .select(
+        return (
+            ml_data.select(
                 pl.col("activity_name"),
                 pl.col("secret_user_id").alias("secret_id"),
                 pl.col("response_start_time")
