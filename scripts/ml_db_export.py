@@ -21,9 +21,10 @@ def _(mo, os):
     data_file = mo.ui.file()
     run_button = mo.ui.run_button()
     output_dir = mo.ui.text()
-    filter_to_applet_name = mo.ui.text()
+    filter_to_applet_name = mo.ui.text(label="applet_name")
     mo.vstack(
         [
+            mo.md(f"Current dir: {os.getcwd()}"),
             mo.hstack(
                 [mo.md("### Upload participants file"), participants_file],
                 justify="start",
@@ -36,11 +37,10 @@ def _(mo, os):
                 ],
                 justify="start",
             ),
-            mo.hstack(
-                [mo.md("### Filter data to applet_name: "), filter_to_applet_name],
+            mo.vstack(
+                [mo.md("### Filter data by: "), filter_to_applet_name],
                 justify="start",
             ),
-            mo.md(f"Current dir: {os.getcwd()}"),
             run_button,
         ]
     )
