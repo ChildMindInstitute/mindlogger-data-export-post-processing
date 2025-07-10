@@ -235,8 +235,14 @@ def _(Path, cs, mo, output_dir, outputs, run_button):
         )
     else:
         for _path_segments, _df in outputs:
+            _output_path = (
+                _output_dir.joinpath(*_path_segments)
+                .with_suffix(".xlsx")
+                .resolve()
+            )
+            _output_path.parent.mkdir(parents=True, exist_ok=True)
             _df.write_excel(
-                _output_dir.joinpath(*_path_segments).with_suffix(".xlsx"),
+                _output_path,
                 conditional_formats={
                     cs.all(): {
                         "type": "cell",
