@@ -5,10 +5,11 @@ from datetime import date, time, timedelta
 import pytest
 
 from mindlogger_data_export.parsers import (
+    FullResponseParser,
     OptionsParser,
-    ResponseParser,
-    ResponseTransformer,
+    SingleSelectResponseParser,
 )
+from mindlogger_data_export.schema import RESPONSE_VALUE_DICT_SCHEMA
 
 
 @pytest.mark.parametrize(
@@ -130,8 +131,8 @@ from mindlogger_data_export.parsers import (
 )
 def test_response_parser(response_field, expected):
     """Test ResponsePreprocessor."""
-    parser = ResponseParser()
-    schema = ResponseTransformer().DEFAULT_SCHEMA
+    parser = FullResponseParser()
+    schema = RESPONSE_VALUE_DICT_SCHEMA
     assert parser.parse(response_field) == schema | expected
 
 
@@ -186,3 +187,30 @@ def test_response_parser(response_field, expected):
 def test_options_parser(options_field, expected):
     parser = OptionsParser()
     assert parser.parse(options_field) == expected
+
+
+@pytest.mark.parametrize(
+    ("input_str", "expected"),
+    [
+        pytest.param(
+            "value: 10",
+            {"null_value": None, "value": "10", "optional_text": None},
+            id="value_only",
+        ),
+        pytest.param(
+            "value: 1 | text: optional text",
+            {"null_value": None, "value": "1", "optional_text": "optional text"},
+            id="with_optional_text",
+        ),
+        pytest.param(
+            "value: null",
+            {"null_value": True, "value": None, "optional_text": None},
+            id="null_value",
+        ),
+    ],
+)
+def test_single_select_response_parser(input_str, expected):
+    parser = SingleSelectResponseParser()
+    parsed = parser.parse(input_str)
+    assert parsed is not None
+    assert parsed == expected

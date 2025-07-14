@@ -8,7 +8,7 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from mindlogger_data_export.parsers import ResponseParser
+from mindlogger_data_export.parsers import FullResponseParser
 from mindlogger_data_export import schema
 from mindlogger_data_export import (
     MindloggerData,

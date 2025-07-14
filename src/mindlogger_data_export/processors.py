@@ -9,7 +9,11 @@ import polars as pl
 import polars.selectors as cs
 
 from . import schema
-from .parsers import OptionsParser, ResponseParser
+from .parsers import (
+    FullResponseParser,
+    OptionsParser,
+    TypedResponseParser,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -39,6 +43,8 @@ class ReportProcessor(Protocol):
 
     PROCESSORS: list[type[ReportProcessor]] = []
     """List of registered processors."""
+
+    ENABLE: bool = False
 
     def __init_subclass__(cls, **kwargs):
         """Register preprocessor subclasses."""
@@ -74,6 +80,7 @@ class ColumnCastingProcessor(ReportProcessor):
 
     NAME = "ColumnCasting"
     PRIORITY = 0
+    ENABLE = True
 
     def _run(self, report) -> pl.DataFrame:
         return report.with_columns(pl.col("rawScore").cast(pl.String))
@@ -84,6 +91,7 @@ class DateTimeProcessor(ReportProcessor):
 
     NAME = "DateTime"
     PRIORITY = 8
+    ENABLE = True
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert timestamps to datetime."""
@@ -103,8 +111,9 @@ class ResponseStructProcessor(ReportProcessor):
     """
 
     NAME = "ResponseStruct"
-    PARSER = ResponseParser()
+    PARSER = FullResponseParser()
     COLUMNS = {"item_response_status", "rawScore", "item_response"}
+    ENABLE = False
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         return report.with_columns(
@@ -123,6 +132,36 @@ class ResponseStructProcessor(ReportProcessor):
         )
 
 
+class TypedResponseStructProcessor(ReportProcessor):
+    """Parse response with type-specific parser."""
+
+    NAME = "TypedResponse"
+    COLUMNS = {"item_response_status", "rawScore", "item_response"}
+    PARSER = TypedResponseParser()
+    ENABLE = True
+    PRIORITY = 40
+
+    def _run(self, report: pl.DataFrame) -> pl.DataFrame:
+        return report.with_columns(
+            response=pl.struct(
+                status=pl.col("item_response_status"),
+                raw_score=pl.col("rawScore"),
+                raw_response=pl.col("item_response"),
+                value=pl.struct(
+                    item_type=pl.col("item").struct.field("type"),
+                    response=pl.col("item_response").str.strip_chars(),
+                ).map_elements(
+                    lambda d: self.PARSER.parse_typed(d["item_type"], d["response"]),
+                    schema.RESPONSE_VALUE_SCHEMA,
+                ),
+            )
+        ).drop(
+            "item_response_status",
+            "item_response",
+            "rawScore",
+        )
+
+
 class UserStructProcessor(ReportProcessor):
     """Convert user info to struct.
 
@@ -131,6 +170,7 @@ class UserStructProcessor(ReportProcessor):
     """
 
     NAME = "UserStruct"
+    ENABLE = True
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert user info to struct."""
@@ -169,6 +209,7 @@ class ItemStructProcessor(ReportProcessor):
     """
 
     NAME = "ItemStruct"
+    ENABLE = True
 
     PARSER = OptionsParser()
     COLUMNS = {
@@ -208,6 +249,7 @@ class ActivityFlowStructProcessor(ReportProcessor):
     """
 
     NAME = "ActivityFlowStruct"
+    ENABLE = True
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert activity flow info to struct."""
@@ -231,6 +273,7 @@ class ActivityStructProcessor(ReportProcessor):
     """
 
     NAME = "ActivityStruct"
+    ENABLE = True
     COLUMNS = [
         "activity_id",
         "activity_name",
@@ -269,6 +312,7 @@ class ActivityScheduleStructProcessor(ReportProcessor):
     """
 
     NAME = "ActivityScheduleStruct"
+    ENABLE = True
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Convert activity schedule info to struct."""
@@ -291,6 +335,7 @@ class SubscaleProcessor(ReportProcessor):
 
     NAME = "Subscale"
     PRIORITY = 5
+    ENABLE = True
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Process subscale columns."""

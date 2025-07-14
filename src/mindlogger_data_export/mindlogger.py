@@ -187,6 +187,9 @@ class MindloggerData:
                 how="diagonal_relaxed",
             )
             for proc in sorted(ReportProcessor.PROCESSORS, key=lambda x: x.PRIORITY):
+                if not proc.ENABLE:
+                    LOG.debug("Skipping disabled processor (%s)", proc.NAME)
+                    continue
                 LOG.debug("Running processor %s...", proc.NAME)
                 report = proc().process(report)
         except pl.exceptions.ComputeError:

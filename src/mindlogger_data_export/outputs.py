@@ -77,11 +77,12 @@ class WideFormat(Output):
     def _pivot(self, df: pl.DataFrame) -> pl.DataFrame:
         df = (
             df.with_columns(
-                item=pl.concat_str(
-                    pl.col("item").struct.field("id", "name"),
-                    separator="_",
-                    ignore_nulls=True,
-                ),
+                # item=pl.concat_str(
+                #     pl.col("item").struct.field("id", "name"),
+                #     separator="_",
+                #     ignore_nulls=True,
+                # ),
+                item=pl.col("item").struct.field("name"),
                 response_value=pl.col("response").struct.field("value"),
                 response_raw_score=pl.col("response").struct.field("raw_score"),
             )
@@ -108,35 +109,49 @@ class WideFormat(Output):
             )
         )
         return (
-            df.pivot(
-                on="item",
-                values=cs.starts_with("response_"),
+            (
+                df.pivot(
+                    on="item",
+                    values=cs.starts_with("response_"),
+                )
+                .with_columns(
+                    self.unnest_structs(
+                        [
+                            "activity_time",
+                            "account_user",
+                            "target_user",
+                            "source_user",
+                            "input_user",
+                            "activity",
+                            "activity_flow",
+                            "activity_submission",
+                            "activity_schedule",
+                        ]
+                    ),
+                )
+                .drop(
+                    "activity_time",
+                    "account_user",
+                    "target_user",
+                    "source_user",
+                    "input_user",
+                    "activity",
+                    "activity_flow",
+                    "activity_schedule",
+                    "activity_submission",
+                )
             )
             .with_columns(
-                self.unnest_structs(
-                    [
-                        "activity_time",
-                        "account_user",
-                        "target_user",
-                        "source_user",
-                        "input_user",
-                        "activity",
-                        "activity_flow",
-                        "activity_submission",
-                        "activity_schedule",
-                    ]
+                cs.starts_with("response_raw_score_").name.map(
+                    lambda s: s.removeprefix("response_raw_score_")
+                ),
+                cs.starts_with("response_value_").name.map(
+                    lambda s: s.removeprefix("response_value_")
                 ),
             )
             .drop(
-                "activity_time",
-                "account_user",
-                "target_user",
-                "source_user",
-                "input_user",
-                "activity",
-                "activity_flow",
-                "activity_schedule",
-                "activity_submission",
+                cs.starts_with("response_raw_score_"),
+                cs.starts_with("response_value_"),
             )
         )
 
@@ -146,7 +161,7 @@ class WideFormat(Output):
             and self._extra["split_activities"].lower() == "true"
         ):
             return [
-                NamedOutput(f"{activity[0]}-{activity[1]}", self._pivot(activity_df))
+                NamedOutput(f"{activity[1]}", self._pivot(activity_df))
                 for activity, activity_df in data.report.with_columns(
                     activity_id=pl.col("activity").struct.field("id"),
                     activity_name=pl.col("activity").struct.field("name"),

@@ -1,5 +1,7 @@
 """Schema definitions."""
 
+from typing import Any
+
 import polars as pl
 
 USER_SCHEMA = pl.Schema(
@@ -12,11 +14,45 @@ USER_SCHEMA = pl.Schema(
     }
 )
 
+
+##### Full Set of Response Types / Labels #####
+# From: https://github.com/ChildMindInstitute/mindlogger-admin/blob/develop/src/shared/consts.tsx#L107
+#   ABTrails = 'ABTrails',
+#   Audio = 'audio',
+#   AudioPlayer = 'audioPlayer',
+#   Date = 'date',
+#   Drawing = 'drawing',
+#   Flanker = 'flanker',
+#   Geolocation = 'geolocation',
+#   Message = 'message',
+#   MultipleSelection = 'multiSelect',
+#   MultipleSelectionPerRow = 'multiSelectRows',
+#   NumberSelection = 'numberSelect',
+#   ParagraphText = 'paragraphText',
+#   Photo = 'photo',
+#   PhrasalTemplate = 'phrasalTemplate',
+#   RequestHealthRecordData = 'requestHealthRecordData',
+#   SingleSelection = 'singleSelect',
+#   SingleSelectionPerRow = 'singleSelectRows',
+#   Slider = 'slider',
+#   SliderRows = 'sliderRows',
+#   StabilityTracker = 'stabilityTracker',
+#   Text = 'text',
+#   Time = 'time',
+#   TimeRange = 'timeRange',
+#   TouchPractice = 'touchPractice',
+#   TouchTest = 'touchTest',
+#   Unity = 'unity',
+#   Video = 'video',
+##############################################
+
+
 RESPONSE_VALUE_SCHEMA = pl.Struct(
     {
         "type": pl.String,
         "raw_value": pl.String,
         "null_value": pl.Boolean,
+        "single_value": pl.String,
         "value": pl.List(pl.String),
         "text": pl.String,
         "file": pl.String,
@@ -29,11 +65,15 @@ RESPONSE_VALUE_SCHEMA = pl.Struct(
     }
 )
 
+RESPONSE_VALUE_DICT_SCHEMA: dict[str, Any] = {
+    f.name: None for f in RESPONSE_VALUE_SCHEMA.fields
+}
 
 RESPONSE_SCHEMA = pl.Schema(
     {
         "status": pl.String,
         "value": RESPONSE_VALUE_SCHEMA,
+        "raw_response": pl.String,
         "raw_score": pl.String,
     }
 )

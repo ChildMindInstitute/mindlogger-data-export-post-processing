@@ -1,120 +1,22 @@
 """Parse response string to dict."""
 
 from datetime import date, time, timedelta
-from typing import Any
+from typing import Any, Protocol
 
 from lark import Lark, Transformer, v_args
 
-
-class ResponseTransformer(Transformer):
-    """Transform Lark parse tree to dict."""
-
-    PIVOT_YEAR = 69
-    MAX_TWO_DIGIT = 99
-
-    DEFAULT_SCHEMA = {
-        "type": None,
-        "raw_value": None,
-        "null_value": None,
-        "value": None,
-        "text": None,
-        "file": None,
-        "date": None,
-        "time": None,
-        "time_range": None,
-        "geo": None,
-        "matrix": None,
-        "optional_text": None,
-    }
-
-    @v_args(inline=True)
-    def start(self, value, optional_text=None):  # noqa: D102
-        if optional_text:
-            value = value | optional_text
-        return self.DEFAULT_SCHEMA | value
-
-    def padded_two_digit(self, items):  # noqa: D102
-        return int("".join(items))
-
-    def year(self, items):  # noqa: D102
-        iyr = int("".join(items))
-        conversion = (
-            2000 if iyr < self.PIVOT_YEAR else 1900 if iyr <= self.MAX_TWO_DIGIT else 0
-        )
-        return iyr + conversion
-
-    @v_args(inline=True)
-    def date_resp(self, day, month, year):  # noqa: D102
-        return {"type": "date", "date": date(year, month, day)}
-
-    @v_args(inline=True)
-    def time(self, hour, minute):  # noqa: D102
-        return time(hour, minute)
-
-    @v_args(inline=True)
-    def time_resp(self, time):  # noqa: D102
-        return {"type": "time", "time": time}
-
-    @v_args(inline=True)
-    def time_range_resp(self, from_time, to_time):  # noqa: D102
-        return {
-            "type": "time_range",
-            "time_range": timedelta(
-                hours=to_time.hour - from_time.hour,
-                minutes=to_time.minute - from_time.minute,
-            ),
-        }
-
-    @v_args(inline=True)
-    def geo_resp(self, latitude, longitude):  # noqa: D102
-        return {"type": "geo", "geo": {"latitude": latitude, "longitude": longitude}}
-
-    @v_args(inline=True)
-    def text_resp(self, text):  # noqa: D102
-        return {"type": "text", "text": text.value}
-
-    @v_args(inline=True)
-    def optional_text(self, text):  # noqa: D102
-        return {"optional_text": text.value}
-
-    @v_args(inline=True)
-    def null_resp(self):  # noqa: D102
-        return {"type": "null_value", "null_value": True}
-
-    @v_args(inline=True)
-    def multivalue_resp(self, vlist):  # noqa: D102
-        return {"type": "value", "value": vlist}
-
-    @v_args(inline=True)
-    def row_kv(self, key, row_value):  # noqa: D102
-        return {"row": key.value, "value": row_value.value}
-
-    def matrix_resp(self, items):  # noqa: D102
-        return {"type": "matrix", "matrix": items}
-
-    @v_args(inline=True)
-    def row_kvv(self, key, ilist):  # noqa: D102
-        return {"row": key.value, "value": ilist}
-
-    def vlist(self, items):  # noqa: D102
-        return [i.value for i in items]
-
-    def ilist(self, items):  # noqa: D102
-        return items
-
-    @v_args(inline=True)
-    def file_resp(self, path):  # noqa: D102
-        return {"type": "file", "file": path.value}
-
-    @v_args(inline=True)
-    def raw_value_resp(self, value):  # noqa: D102
-        return {"type": "raw_value", "raw_value": value.value}
-
-    SIGNED_FLOAT = float
-    INT = int
+from .schema import RESPONSE_VALUE_DICT_SCHEMA
 
 
-class ResponseParser:
+class ResponseParser(Protocol):
+    """Base class for response parsers."""
+
+    def parse(self, response: str) -> dict[str, Any]:
+        """Parse response string to dict."""
+        ...
+
+
+class FullResponseParser(ResponseParser):
     """Parse response string to dict using Lark grammar."""
 
     RESPONSE_GRAMMAR = r"""
@@ -188,16 +90,110 @@ class ResponseParser:
     %ignore ","
     """
 
+    class FullResponseTransformer(Transformer):
+        """Transform Lark parse tree to dict."""
+
+        PIVOT_YEAR = 69
+        MAX_TWO_DIGIT = 99
+
+        @v_args(inline=True)
+        def start(self, value, optional_text=None):  # noqa: D102
+            if optional_text:
+                value = value | optional_text
+            return RESPONSE_VALUE_DICT_SCHEMA | value
+
+        def padded_two_digit(self, items):  # noqa: D102
+            return int("".join(items))
+
+        def year(self, items):  # noqa: D102
+            iyr = int("".join(items))
+            conversion = (
+                2000
+                if iyr < self.PIVOT_YEAR
+                else 1900
+                if iyr <= self.MAX_TWO_DIGIT
+                else 0
+            )
+            return iyr + conversion
+
+        @v_args(inline=True)
+        def date_resp(self, day, month, year):  # noqa: D102
+            return {"type": "date", "date": date(year, month, day)}
+
+        @v_args(inline=True)
+        def time(self, hour, minute):  # noqa: D102
+            return time(hour, minute)
+
+        @v_args(inline=True)
+        def time_resp(self, time):  # noqa: D102
+            return {"type": "time", "time": time}
+
+        @v_args(inline=True)
+        def time_range_resp(self, from_time, to_time):  # noqa: D102
+            return {
+                "type": "time_range",
+                "time_range": timedelta(
+                    hours=to_time.hour - from_time.hour,
+                    minutes=to_time.minute - from_time.minute,
+                ),
+            }
+
+        @v_args(inline=True)
+        def geo_resp(self, latitude, longitude):  # noqa: D102
+            return {
+                "type": "geo",
+                "geo": {"latitude": latitude, "longitude": longitude},
+            }
+
+        @v_args(inline=True)
+        def text_resp(self, text):  # noqa: D102
+            return {"type": "text", "text": text.value}
+
+        @v_args(inline=True)
+        def optional_text(self, text):  # noqa: D102
+            return {"optional_text": text.value}
+
+        @v_args(inline=True)
+        def null_resp(self):  # noqa: D102
+            return {"type": "null_value", "null_value": True}
+
+        @v_args(inline=True)
+        def multivalue_resp(self, vlist):  # noqa: D102
+            return {"type": "value", "value": vlist}
+
+        @v_args(inline=True)
+        def row_kv(self, key, row_value):  # noqa: D102
+            return {"row": key.value, "value": row_value.value}
+
+        def matrix_resp(self, items):  # noqa: D102
+            return {"type": "matrix", "matrix": items}
+
+        @v_args(inline=True)
+        def row_kvv(self, key, ilist):  # noqa: D102
+            return {"row": key.value, "value": ilist}
+
+        def vlist(self, items):  # noqa: D102
+            return [i.value for i in items]
+
+        def ilist(self, items):  # noqa: D102
+            return items
+
+        @v_args(inline=True)
+        def file_resp(self, path):  # noqa: D102
+            return {"type": "file", "file": path.value}
+
+        @v_args(inline=True)
+        def raw_value_resp(self, value):  # noqa: D102
+            return {"type": "raw_value", "raw_value": value.value}
+
+        SIGNED_FLOAT = float
+        INT = int
+
     def __init__(self):
         """Initialize ResponseParser."""
-        self._transformer = ResponseTransformer()
+        self._transformer = self.FullResponseTransformer()
         self._parser = Lark(self.RESPONSE_GRAMMAR)
-        self._types = self._transformer.DEFAULT_SCHEMA.keys()
-
-    @property
-    def types(self):
-        """Return response types."""
-        return self._types
+        self._types = RESPONSE_VALUE_DICT_SCHEMA.keys()
 
     def parse(self, response: str) -> dict[str, Any]:
         """Parse response string to dict."""
@@ -212,6 +208,315 @@ class ResponseParser:
             )
 
         return _parser
+
+
+class GeoResponseParser(ResponseParser):
+    """Parse response string to dict using Lark grammar."""
+
+    RESPONSE_GRAMMAR = r"""
+    start: geo_resp [ optional_text ]
+
+    optional_text: _WSI "| text:" _WSI _text
+    _text: /.+/s
+
+    // Matches geo coordinates with latitude and longitude.
+    geo_resp.10: "geo:" _WSI _latitude _WSI "/"? _WSI? _longitude
+    _latitude: "lat" _WSI "("? SIGNED_FLOAT ")"?
+    _longitude: "long" _WSI "("? SIGNED_FLOAT ")"?
+
+    %import common.SIGNED_FLOAT
+    %import common.WS_INLINE -> _WSI
+
+    // Disregard commas in parse tree
+    %ignore ","
+    """
+
+    class GeoResponseTransformer(Transformer):
+        """Transform Lark parse tree to dict."""
+
+        PIVOT_YEAR = 69
+        MAX_TWO_DIGIT = 99
+
+        @v_args(inline=True)
+        def start(self, value, optional_text=None):  # noqa: D102
+            if optional_text:
+                value = value | optional_text
+            return RESPONSE_VALUE_DICT_SCHEMA | value
+
+        @v_args(inline=True)
+        def geo_resp(self, latitude, longitude):  # noqa: D102
+            return {
+                "type": "geo",
+                "geo": {"latitude": latitude, "longitude": longitude},
+            }
+
+        @v_args(inline=True)
+        def optional_text(self, text):  # noqa: D102
+            return {"optional_text": text.value}
+
+        SIGNED_FLOAT = float
+
+    def __init__(self):
+        """Initialize ResponseParser."""
+        self._transformer = self.GeoResponseTransformer()
+        self._parser = Lark(self.RESPONSE_GRAMMAR)
+        self._types = RESPONSE_VALUE_DICT_SCHEMA.keys()
+
+    def parse(self, response: str) -> dict[str, Any]:
+        """Parse response string to dict."""
+        return self._transformer.transform(self._parser.parse(response))
+
+
+class DateResponseParser(ResponseParser):
+    """Parse response string to dict using Lark grammar."""
+
+    RESPONSE_GRAMMAR = r"""
+    start: date_resp [ optional_text ]
+
+    optional_text: _WSI "| text:" _WSI _text
+    _text: /.+/s
+
+    // Matches date response in "date: <month>/<day>/<year>" format.
+    date_resp.10: "date:" _WSI padded_two_digit "/" padded_two_digit "/" year
+    padded_two_digit: DIGIT ~ 1..2
+    year: (DIGIT ~ 2) | (DIGIT ~ 4)
+
+    %import common.DIGIT
+    %import common.WS_INLINE -> _WSI
+
+    // Disregard commas in parse tree
+    %ignore ","
+    """
+
+    class DateResponseTransformer(Transformer):
+        """Transform Lark parse tree to dict."""
+
+        PIVOT_YEAR = 69
+        MAX_TWO_DIGIT = 99
+
+        @v_args(inline=True)
+        def start(self, value, optional_text=None):  # noqa: D102
+            if optional_text:
+                value = value | optional_text
+            return RESPONSE_VALUE_DICT_SCHEMA | value
+
+        def padded_two_digit(self, items):  # noqa: D102
+            return int("".join(items))
+
+        def year(self, items):  # noqa: D102
+            iyr = int("".join(items))
+            conversion = (
+                2000
+                if iyr < self.PIVOT_YEAR
+                else 1900
+                if iyr <= self.MAX_TWO_DIGIT
+                else 0
+            )
+            return iyr + conversion
+
+        @v_args(inline=True)
+        def date_resp(self, day, month, year):  # noqa: D102
+            return {"type": "date", "date": date(year, month, day)}
+
+        @v_args(inline=True)
+        def optional_text(self, text):  # noqa: D102
+            return {"optional_text": text.value}
+
+    def __init__(self):
+        """Initialize ResponseParser."""
+        self._transformer = self.DateResponseTransformer()
+        self._parser = Lark(self.RESPONSE_GRAMMAR)
+        self._types = RESPONSE_VALUE_DICT_SCHEMA.keys()
+
+    def parse(self, response: str) -> dict[str, Any]:
+        """Parse response string to dict."""
+        return self._transformer.transform(self._parser.parse(response))
+
+
+class MultiSelectResponseParser(ResponseParser):
+    """Parse response string to dict using Lark grammar."""
+
+    RESPONSE_GRAMMAR = r"""
+    start:  null_resp | ( multivalue_resp [ optional_text ] )
+
+    // Matches text response in "text: <text>" format, including multi-line text.
+    optional_text: _WSI "| text:" _WSI _text
+    _text: /.+/s
+
+    // Matches null response in "value: null" format.
+    null_resp.20: "value: null"
+
+    // Matches single or multiple values in "value: <value>, <value>, ..." format.
+    multivalue_resp.10: "value:" _WSI vlist
+
+    // list of comma-separated values
+    vlist: _sep{_value, _CSV}
+
+    // Value is any non-empty alphanumeric string
+    _value: /[.\w]+/
+    _CSV: "," _WSI
+    _sep{x, sep}: x (sep x)*
+
+    %import common.WS_INLINE -> _WSI
+
+    // Disregard commas in parse tree
+    %ignore ","
+    """
+
+    class MultiSelectResponseTransformer(Transformer):
+        """Transform Lark parse tree to dict."""
+
+        PIVOT_YEAR = 69
+        MAX_TWO_DIGIT = 99
+
+        @v_args(inline=True)
+        def start(self, value, optional_text=None):  # noqa: D102
+            if optional_text:
+                value = value | optional_text
+            return RESPONSE_VALUE_DICT_SCHEMA | value
+
+        @v_args(inline=True)
+        def optional_text(self, text):  # noqa: D102
+            return {"optional_text": text.value}
+
+        @v_args(inline=True)
+        def null_resp(self):  # noqa: D102
+            return {"type": "null_value", "null_value": True}
+
+        @v_args(inline=True)
+        def multivalue_resp(self, vlist):  # noqa: D102
+            return {"type": "value", "value": vlist}
+
+        def vlist(self, items):  # noqa: D102
+            return [i.value for i in items]
+
+        SIGNED_FLOAT = float
+        INT = int
+
+    def __init__(self):
+        """Initialize ResponseParser."""
+        self._transformer = self.MultiSelectResponseTransformer()
+        self._parser = Lark(self.RESPONSE_GRAMMAR)
+        self._types = RESPONSE_VALUE_DICT_SCHEMA.keys()
+
+    def parse(self, response: str) -> dict[str, Any]:
+        """Parse response string to dict."""
+        return self._transformer.transform(self._parser.parse(response))
+
+
+class SingleSelectResponseParser(ResponseParser):
+    """Parse a single select response value."""
+
+    RESPONSE_GRAMMAR = r"""
+    start: null_resp | ( value_resp [ optional_text ] )
+
+    optional_text: _WSI "| text:" _WSI _text
+    _text: /.+/s
+
+    // Matches null response in "value: null" format.
+    null_resp.20: "value: null"
+
+    // Matches single value in "value: <value>" format.
+    value_resp.10: "value:" _WSI _value
+
+    // Value is any non-empty alphanumeric string
+    _value: /[.\w]+/
+
+    %import common.WS_INLINE -> _WSI
+    """
+
+    class SingleSelectTransformer(Transformer):
+        """Transform Lark parse tree to dict."""
+
+        @v_args(inline=True)
+        def start(self, value, optional_text=None):  # noqa: D102
+            if optional_text:
+                value = value | optional_text
+            return RESPONSE_VALUE_DICT_SCHEMA | value
+
+        @v_args(inline=True)
+        def optional_text(self, text):  # noqa: D102
+            return {"optional_text": text.value}
+
+        @v_args(inline=True)
+        def value_resp(self, value):  # noqa: D102
+            return {"single_value": value.value}
+
+        @v_args(inline=True)
+        def null_resp(self):  # noqa: D102
+            return {"null_value": True}
+
+        SIGNED_FLOAT = float
+        INT = int
+
+    def __init__(self):
+        """Initialize ResponseParser."""
+        self._transformer = self.SingleSelectTransformer()
+        self._parser = Lark(self.RESPONSE_GRAMMAR)
+        self._types = RESPONSE_VALUE_DICT_SCHEMA.keys()
+
+    def parse(self, response: str) -> dict[str, Any]:
+        """Parse response string to dict."""
+        return self._transformer.transform(self._parser.parse(response))
+
+
+class TextResponseParser(ResponseParser):
+    """Parse response string to dict using Lark grammar."""
+
+    RESPONSE_GRAMMAR = r"""
+    start: text_resp
+
+    // Matches any text response.
+    text_resp.10: _text
+    _text: /.+/s
+    """
+
+    class TextResponseTransformer(Transformer):
+        """Transform Lark parse tree to dict."""
+
+        @v_args(inline=True)
+        def start(self, value, optional_text=None):  # noqa: D102
+            if optional_text:
+                value = value | optional_text
+            return RESPONSE_VALUE_DICT_SCHEMA | value
+
+        @v_args(inline=True)
+        def text_resp(self, text):  # noqa: D102
+            return {"type": "text", "text": text.value}
+
+    def __init__(self):
+        """Initialize ResponseParser."""
+        self._transformer = self.TextResponseTransformer()
+        self._parser = Lark(self.RESPONSE_GRAMMAR)
+        self._types = RESPONSE_VALUE_DICT_SCHEMA.keys()
+
+    def parse(self, response: str) -> dict[str, Any]:
+        """Parse response string to dict."""
+        return self._transformer.transform(self._parser.parse(response))
+
+
+class TypedResponseParser(ResponseParser):
+    """Group all typed response parsers."""
+
+    def __init__(self) -> None:
+        self._parsers = {
+            "singleSelect": SingleSelectResponseParser(),
+            "multiSelect": MultiSelectResponseParser(),
+            "text": TextResponseParser(),
+            "date": DateResponseParser(),
+            "geolocation": GeoResponseParser(),
+        }
+        self._default_parser = FullResponseParser()
+
+    def parse(self, response: str) -> dict[str, Any]:
+        """Parse with default parser."""
+        return self._default_parser.parse(response)
+
+    def parse_typed(self, item_type: str, response: str) -> dict[str, Any]:
+        """Distribute parsing based on item type."""
+        if item_type in self._parsers:
+            return self._parsers[item_type].parse(response)
+        return self._default_parser.parse(response)
 
 
 class OptionsTransformer(Transformer):
