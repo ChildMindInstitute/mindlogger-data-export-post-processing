@@ -8,6 +8,7 @@ from pathlib import Path
 
 import polars as pl
 
+from . import util
 from .models import MindloggerUser, UserType
 from .processors import ReportProcessor
 
@@ -83,10 +84,33 @@ class MindloggerData:
         return pl.DataFrame(
             self.report.select(
                 "applet_version",
-                pl.col("activity_flow").struct.unnest().name.prefix("activity_flow_"),
-                pl.col("activity").struct.unnest().name.prefix("activity_"),
-                pl.col("item").struct.unnest().name.prefix("item_"),
+                util.unnest_structs("activity_flow", "activity", "item"),
             ).unique()
+        )
+
+    @cached_property
+    def item_response_options(self) -> pl.DataFrame:
+        """Return options format suitable for joining to score.
+
+        Columns:
+        applet_version, activity_flow, activity, item, item_option_name, item_option_value, item_option_score
+        """
+        return (
+            self.report.select(
+                "applet_version",
+                "activity_flow",
+                "activity",
+                "item",
+                item_response_options=pl.col("item").struct.field("response_options"),
+            )
+            .explode("item_response_options")
+            .with_columns(
+                pl.col("item_response_options")
+                .struct.unnest()
+                .name.prefix("item_option_")
+            )
+            .drop("item_response_options")
+            .unique()
         )
 
     @staticmethod

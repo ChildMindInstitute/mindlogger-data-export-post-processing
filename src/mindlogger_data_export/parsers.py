@@ -347,16 +347,18 @@ class MultiSelectResponseParser(ResponseParser):
     null_resp.20: "value: null"
 
     // Matches single or multiple values in "value: <value>, <value>, ..." format.
-    multivalue_resp.10: "value:" _WSI vlist
+    multivalue_resp.10: "value:" _WSI ilist
 
     // list of comma-separated values
     vlist: _sep{_value, _CSV}
+    ilist: _sep{INT, _CSV}
 
     // Value is any non-empty alphanumeric string
     _value: /[.\w]+/
     _CSV: "," _WSI
     _sep{x, sep}: x (sep x)*
 
+    %import common.INT
     %import common.WS_INLINE -> _WSI
 
     // Disregard commas in parse tree
@@ -365,9 +367,6 @@ class MultiSelectResponseParser(ResponseParser):
 
     class MultiSelectResponseTransformer(Transformer):
         """Transform Lark parse tree to dict."""
-
-        PIVOT_YEAR = 69
-        MAX_TWO_DIGIT = 99
 
         @v_args(inline=True)
         def start(self, value, optional_text=None):  # noqa: D102
@@ -389,6 +388,9 @@ class MultiSelectResponseParser(ResponseParser):
 
         def vlist(self, items):  # noqa: D102
             return [i.value for i in items]
+
+        def ilist(self, items):  # noqa: D102
+            return items
 
         SIGNED_FLOAT = float
         INT = int
@@ -417,11 +419,13 @@ class SingleSelectResponseParser(ResponseParser):
     null_resp.20: "value: null"
 
     // Matches single value in "value: <value>" format.
-    value_resp.10: "value:" _WSI _value
+    // value_resp.10: "value:" _WSI _value
+    value_resp.10: "value:" _WSI INT
 
     // Value is any non-empty alphanumeric string
     _value: /[.\w]+/
 
+    %import common.INT
     %import common.WS_INLINE -> _WSI
     """
 
@@ -440,7 +444,8 @@ class SingleSelectResponseParser(ResponseParser):
 
         @v_args(inline=True)
         def value_resp(self, value):  # noqa: D102
-            return {"single_value": value.value}
+            # return {"single_value": value.value}
+            return {"single_value": value}
 
         @v_args(inline=True)
         def null_resp(self):  # noqa: D102
@@ -467,7 +472,7 @@ class TextResponseParser(ResponseParser):
     start: text_resp
 
     // Matches any text response.
-    text_resp.10: _text
+    text_resp: _text
     _text: /.+/s
     """
 
@@ -495,6 +500,17 @@ class TextResponseParser(ResponseParser):
         return self._transformer.transform(self._parser.parse(response))
 
 
+class SubscaleResponseParser(ResponseParser):
+    """Parse response string to dict using Lark grammar."""
+
+    def parse(self, response: str) -> dict[str, Any]:
+        """Parse response string to dict."""
+        return RESPONSE_VALUE_DICT_SCHEMA | {
+            "type": "subscale",
+            "subscale": float(response),
+        }  # self._transformer.transform(self._parser.parse(response))
+
+
 class TypedResponseParser(ResponseParser):
     """Group all typed response parsers."""
 
@@ -503,6 +519,7 @@ class TypedResponseParser(ResponseParser):
             "singleSelect": SingleSelectResponseParser(),
             "multiSelect": MultiSelectResponseParser(),
             "text": TextResponseParser(),
+            "subscale": SubscaleResponseParser(),
             "date": DateResponseParser(),
             "geolocation": GeoResponseParser(),
         }
@@ -514,9 +531,7 @@ class TypedResponseParser(ResponseParser):
 
     def parse_typed(self, item_type: str, response: str) -> dict[str, Any]:
         """Distribute parsing based on item type."""
-        if item_type in self._parsers:
-            return self._parsers[item_type].parse(response)
-        return self._default_parser.parse(response)
+        return self._parsers.get(item_type, self._default_parser).parse(response)
 
 
 class OptionsTransformer(Transformer):
@@ -577,7 +592,8 @@ class OptionsParser:
     option: name _WSI? ":" _WSI? INT
 
     // Value is any string with 0 or 1 ':' characters.
-    name: /[^:]+/ | /[^:]+:[^:]+/
+    // name: /[^:]+/ | /[^:]+:[^:]+/
+    name: /[^:]+/
     _CSV: "," _WSI?
     _sep{x, sep}: x (sep x)*
 

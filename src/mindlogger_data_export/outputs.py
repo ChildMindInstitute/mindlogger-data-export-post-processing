@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from collections.abc import Generator
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
 import polars.selectors as cs
 
+from . import util
 from .mindlogger import MindloggerData
+from .schema import ItemType
 
 LOG = logging.getLogger(__name__)
 
@@ -63,95 +65,181 @@ class Output(ABC):
         """Print information about output types."""
         return {k: v.__doc__ for k, v in cls.TYPES.items() if v.__doc__}
 
-    def unnest_structs(self, struct_cols: list[str]) -> Generator[pl.Expr, None, None]:
-        """Unnest struct columns and prefix resulting columns with '<column_name>_'."""
-        for sc in struct_cols:
-            yield pl.col(sc).struct.unnest().name.prefix(f"{sc}_")
-
 
 class WideFormat(Output):
     """Wide data format with all parsed nested types unnested / exploded."""
 
     NAME = "wide"
 
-    def _pivot(self, df: pl.DataFrame) -> pl.DataFrame:
+    @staticmethod
+    def _pivot_multiselect(
+        df: pl.DataFrame, option_scores: pl.DataFrame
+    ) -> pl.DataFrame:
+        del option_scores
+        return (
+            df.with_columns(item_option=pl.col("item").struct.field("response_options"))
+            .explode("item_option")
+            # Generate value column indicating presence of response.
+            .with_columns(
+                response_present=pl.col("item_option")
+                .struct.field("value")
+                .is_in(pl.col("response_value").struct.field("value")),
+                # response_index=pl.col("item_option").struct.field("value"),
+                # response_name=pl.col("item_option").struct.field("name"),
+            )
+            .drop("response_value", "response_raw_score")
+            # Generate pivot column.
+            .with_columns(
+                item_option_pivot=pl.concat_str(
+                    pl.col("item").struct.field("name"),
+                    pl.col("item_option").struct.field("value"),
+                    separator="_",
+                )
+            )
+            .drop("item_option")
+            .pivot(
+                on=["item_option_pivot"], values="response_present", sort_columns=True
+            )
+        )
+
+    @staticmethod
+    def _map_response_column_names(cname: str) -> str:
+        parts = cname.split("__", 1)
+        return "_".join([parts[1], parts[0].removeprefix("response")])
+
+    @staticmethod
+    def _pivot_singleselect(
+        df: pl.DataFrame, option_scores: pl.DataFrame
+    ) -> pl.DataFrame:
+        # Score single select responses.
+        response_options = option_scores.with_columns(
+            pl.col("item_option_value").alias("response_index"),
+            pl.col("item_option_score").alias("response_score"),
+            pl.col("item_option_name").alias("response_name"),
+        ).drop("item_option_score", "item_option_value", "item_option_name")
+
+        return (
+            (
+                df.with_columns(
+                    response_index=pl.col("response_value").struct.field("single_value")
+                )
+                .drop("response_value")
+                .join(
+                    response_options,
+                    on=[
+                        "applet_version",
+                        "activity_flow",
+                        "activity",
+                        "item",
+                        "response_index",
+                    ],
+                    how="left",
+                    validate="m:1",
+                )
+                .with_columns(item_name=pl.col("item").struct.field("name"))
+                .drop("item")
+            )
+            .pivot(on="item_name", values=cs.starts_with("response"), separator="__")
+            .with_columns(
+                cs.starts_with("response").name.map(
+                    WideFormat._map_response_column_names
+                )
+            )
+            .drop(cs.starts_with("response"))
+        )
+
+    @staticmethod
+    def _pivot_text(df: pl.DataFrame, option_scores: pl.DataFrame) -> pl.DataFrame:
+        del option_scores
+        return (
+            df.with_columns(
+                response_value=pl.col("response_value").struct.field("text"),
+                item_name=pl.col("item").struct.field("name"),
+            )
+            .drop("response_raw_score", "item")
+            .pivot(on="item_name", values="response_value")
+        )
+
+    @staticmethod
+    def _pivot_subscale(df: pl.DataFrame, option_scores: pl.DataFrame) -> pl.DataFrame:
+        del option_scores
+        return (
+            df.with_columns(
+                response_value=pl.col("response_value").struct.field("subscale"),
+                item_name=pl.col("item").struct.field("name"),
+            )
+            .drop("response_raw_score", "item")
+            .pivot(on="item_name", values="response_value")
+        )
+
+    PIVOT_FNS = {
+        (ItemType.MultipleSelection,): _pivot_multiselect,
+        (ItemType.SingleSelection,): _pivot_singleselect,
+        (ItemType.Text,): _pivot_text,
+        (ItemType.Subscale,): _pivot_subscale,
+    }
+
+    def _get_pivot_fn(
+        self, partition_type: tuple[ItemType]
+    ) -> Callable[[pl.DataFrame, pl.DataFrame], pl.DataFrame]:
+        return self.PIVOT_FNS.get(partition_type, self._pivot_text)
+
+    def _typed_pivot(
+        self, df: pl.DataFrame, option_scores: pl.DataFrame
+    ) -> pl.DataFrame:
         df = (
             df.with_columns(
-                # item=pl.concat_str(
-                #     pl.col("item").struct.field("id", "name"),
-                #     separator="_",
-                #     ignore_nulls=True,
-                # ),
-                item=pl.col("item").struct.field("name"),
                 response_value=pl.col("response").struct.field("value"),
                 response_raw_score=pl.col("response").struct.field("raw_score"),
             )
-            .with_columns(self.unnest_structs(["response_value"]))
-            .drop("response_value_matrix", "response_value_geo")
-            .with_columns(pl.col("response_value_value").fill_null(pl.lit([])))
-        )
-        max_value_len = df.select(pl.col("response_value_value").list.len().max())[
-            0, "response_value_value"
-        ]
-
-        df = (
-            df.with_columns(
-                pl.col("response_value_value").list.to_struct(
-                    n_field_strategy="max_width", upper_bound=max_value_len
-                )
-            )
-            .with_columns(self.unnest_structs(["response_value_value"]))
-            .drop(
-                "response",
-                "response_value",
-                "response_value_type",
-                "response_value_value",
-            )
-        )
-        return (
-            (
-                df.pivot(
-                    on="item",
-                    values=cs.starts_with("response_"),
-                )
-                .with_columns(
-                    self.unnest_structs(
-                        [
-                            "activity_time",
-                            "account_user",
-                            "target_user",
-                            "source_user",
-                            "input_user",
-                            "activity",
-                            "activity_flow",
-                            "activity_submission",
-                            "activity_schedule",
-                        ]
-                    ),
-                )
-                .drop(
-                    "activity_time",
-                    "account_user",
-                    "target_user",
-                    "source_user",
-                    "input_user",
-                    "activity",
-                    "activity_flow",
-                    "activity_schedule",
-                    "activity_submission",
-                )
-            )
+            .drop("response")
             .with_columns(
-                cs.starts_with("response_raw_score_").name.map(
-                    lambda s: s.removeprefix("response_raw_score_")
-                ),
-                cs.starts_with("response_value_").name.map(
-                    lambda s: s.removeprefix("response_value_")
-                ),
+                response_value=pl.struct(
+                    pl.col("response_value").struct.field(
+                        "raw_value",
+                        "null_value",
+                        "single_value",
+                        "value",
+                        "text",
+                        "subscale",
+                        "optional_text",
+                    )
+                )
             )
-            .drop(
-                cs.starts_with("response_raw_score_"),
-                cs.starts_with("response_value_"),
+        )
+
+        # Partition by type. Each type should pivot independently.
+        typed_partitions: dict[tuple[ItemType], pl.DataFrame] = df.with_columns(
+            item_type=pl.col("item").struct.field("type")
+        ).partition_by("item_type", include_key=False, as_dict=True)  # type: ignore
+
+        # Multiple Selection
+        # Convert multiselect into one-hot encoding.
+        pivoted_dfs = [
+            self._get_pivot_fn(partition_type)(partition_df, option_scores)
+            for partition_type, partition_df in typed_partitions.items()
+        ]
+        metadata_columns = ["legacy_user_id", "applet_version"]
+        index_struct_columns = [
+            "target_user",
+            "source_user",
+            "input_user",
+            "account_user",
+            "activity_flow",
+            "activity",
+            "activity_submission",
+            "activity_time",
+            "activity_schedule",
+        ]
+        return (
+            pl.concat(pivoted_dfs, how="diagonal_relaxed")
+            .with_columns(util.unnest_structs(*index_struct_columns))
+            .drop(index_struct_columns)
+            .select(
+                pl.col("legacy_user_id"),
+                pl.col("applet_version"),
+                cs.starts_with(*index_struct_columns),
+                ~cs.starts_with(*(index_struct_columns + metadata_columns)),
             )
         )
 
@@ -161,7 +249,10 @@ class WideFormat(Output):
             and self._extra["split_activities"].lower() == "true"
         ):
             return [
-                NamedOutput(f"{activity[1]}", self._pivot(activity_df))
+                NamedOutput(
+                    f"{activity[1]}",
+                    self._typed_pivot(activity_df, data.item_response_options),
+                )
                 for activity, activity_df in data.report.with_columns(
                     activity_id=pl.col("activity").struct.field("id"),
                     activity_name=pl.col("activity").struct.field("name"),
@@ -172,7 +263,11 @@ class WideFormat(Output):
                 .items()
             ]
 
-        return [NamedOutput("wide_data", self._pivot(data.report))]
+        return [
+            NamedOutput(
+                "wide_data", self._typed_pivot(data.report, data.item_response_options)
+            )
+        ]
 
 
 class LongDataFormat(Output):
@@ -220,37 +315,7 @@ class OptionsFormat(Output):
     NAME = "options"
 
     def _format(self, data):
-        return [
-            NamedOutput(
-                "options",
-                data.report.select(
-                    "applet_version",
-                    pl.col("activity_flow")
-                    .struct.unnest()
-                    .name.prefix("activity_flow_"),
-                    pl.col("activity").struct.unnest().name.prefix("activity_"),
-                    pl.col("item").struct.unnest().name.prefix("item_"),
-                )
-                .select(
-                    "activity_flow_id",
-                    "activity_flow_name",
-                    "activity_id",
-                    "activity_name",
-                    "item_id",
-                    "item_name",
-                    "item_prompt",
-                    "item_response_options",
-                )
-                .unique()
-                .explode("item_response_options")
-                .with_columns(
-                    pl.col("item_response_options")
-                    .struct.unnest()
-                    .name.prefix("item_option_")
-                )
-                .drop("item_response_options"),
-            ),
-        ]
+        return [NamedOutput("options", data.item_response_options)]
 
 
 class ScoredResponsesFormat(Output):

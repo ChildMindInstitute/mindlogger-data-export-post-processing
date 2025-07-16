@@ -15,38 +15,99 @@ def _():
     return Path, cs, mo, os, pl
 
 
+@app.cell
+def _():
+    COMPLETION_COLUMNS = {
+        "YMHA Cohort 3 Student Applet IN PERSON": [
+            "AMHLQ",
+            "Healthcare Access",
+            "Impact and Professional Importance",
+            "MAP + MH Interest",
+            "MEIM-6",
+            "Mental Health Attitudes and Help-Seeking",
+            "Mental Healthcare",
+            "PCRB",
+            "PEARLS + CRISIS",
+            "PSC",
+            "SCCS",
+            "SCCT",
+            "SEHS-HE",
+            "Student Week 1 Assessment",
+            "Student Week 2 Assessment",
+            "Student Week 3 Assessment",
+        ],
+        "YMHA Cohort 3 Student Applet VIRTUAL": [
+            "Adolescent Mental Health Literacy Questionnaire (AMHLQ)",
+            "Healthcare Access",
+            "Impact and Professional Importance",
+            "MAP + Mental Health Interest",
+            "Multigroup Ethnic Identity Measure–Revised (MEIM-6)",
+            "Mental Health Attitudes and Help-Seeking",
+            "Mental Healthcare",
+            "Perceived Campus Resources and Barriers (PCRB)",
+            "PEARLS + CRISIS",
+            "Pediatric Symptom Checklist (PSC)",
+            "Student Connectedness to Community Scale (SCCS)",
+            "Social Cognitive Career Theory (SCCT)",
+            "Social Emotional Health Survey – Higher Education (SEHS-HE)",
+            "Student Week 1 Assessment",
+            "Student Week 2 Assessment",
+            "Student Week 3 Assessment",
+        ],
+        "YMHA Cohort 3 Teacher Applet IN PERSON": ["Week 1", "Week 2", "Week 3"],
+        "YMHA Cohort 3 Teacher Applet VIRTUAL": ["Week 1", "Week 2", "Week 3"],
+        "YMHA Cohort 3 Mentor Applet": [
+            "Brief Version of the Big Five Personality Inventory (BFI)",
+            "Check-In",
+            "Experience",
+            "Multigroup Ethnic Identity Measure–Revised (MEIM-6)",
+            "Mentor Experience",
+            "MinT Mentoring Styles Questionnaire",
+            "Program-Developed",
+            "The MAP",
+        ],
+        "YMHA Cohort 3 Parent Applet": [
+            "Confidence",
+            "DSM-5 Cross-Cutting Symptom Measure",
+            "Demographic",
+            "Inventory of Family Protective Factors (IFPF)",
+            "Pediatric Symptom Checklist (PSC)",
+            "Stigma and Self-Stigma Scales (SASS)",
+        ],
+    }
+    return (COMPLETION_COLUMNS,)
+
+
 @app.cell(hide_code=True)
-def _(mo, os):
+def _(COMPLETION_COLUMNS, mo, os):
     participants_file = mo.ui.file()
     data_file = mo.ui.file()
     run_button = mo.ui.run_button()
-    output_dir = mo.ui.text()
-    filter_to_applet_name = mo.ui.text(label="applet_name")
+    output_dir = mo.ui.text(label="Output Dir", value="output/")
+    applet_name = mo.ui.dropdown(
+        label="Applet Name", options=COMPLETION_COLUMNS.keys()
+    )
+    date_format = mo.ui.text(label="Date Format", value="%F %T%.f")
     mo.vstack(
         [
             mo.md(f"Current dir: {os.getcwd()}"),
             mo.hstack(
-                [mo.md("### Upload participants file"), participants_file],
+                [mo.md("#### Upload participants file"), participants_file],
                 justify="start",
             ),
-            mo.hstack([mo.md("### Upload data file"), data_file], justify="start"),
             mo.hstack(
-                [
-                    mo.md("### Output dir"),
-                    output_dir,
-                ],
-                justify="start",
+                [mo.md("#### Upload data file"), data_file], justify="start"
             ),
-            mo.vstack(
-                [mo.md("### Filter data by: "), filter_to_applet_name],
-                justify="start",
-            ),
+            output_dir,
+            applet_name,
+            date_format,
             run_button,
         ]
     )
     return (
+        applet_name,
         data_file,
-        filter_to_applet_name,
+        date_format,
         output_dir,
         participants_file,
         run_button,
@@ -54,16 +115,14 @@ def _(mo, os):
 
 
 @app.cell
-def _(OutputGenerationError, cs, mo, participants_file, pl, run_button):
+def _(cs, mo, participants_file, pl, run_button):
     def load_participants(data) -> pl.DataFrame:
         """Load participants from file path in extra args."""
         participants = pl.read_csv(data)
         if "site" not in participants.columns:
-            raise OutputGenerationError(
-                "'site' column not found in YMHA participants file"
-            )
+            raise Exception("'site' column not found in YMHA participants file")
         if "secretUserId" not in participants.columns:
-            raise OutputGenerationError(
+            raise Exception(
                 "'secretUserId' column not found in YMHA participants file"
             )
         return participants.select(
@@ -82,7 +141,7 @@ def _(OutputGenerationError, cs, mo, participants_file, pl, run_button):
 
 
 @app.cell
-def _(data_file, filter_to_applet_name, mo, pl, run_button):
+def _(applet_name, data_file, date_format, mo, pl, run_button):
     def load_data(mindlogger_data) -> pl.DataFrame:
         """Load data."""
         ml_data = pl.read_csv(
@@ -90,16 +149,14 @@ def _(data_file, filter_to_applet_name, mo, pl, run_button):
             # try_parse_dates=True,
             # schema_overrides={"response_start_time": pl.Datetime()},
         )
-        if filter_to_applet_name.value:
-            ml_data = ml_data.filter(
-                pl.col("applet_name") == filter_to_applet_name.value
-            )
+        if applet_name.value:
+            ml_data = ml_data.filter(pl.col("applet_name") == applet_name.value)
         return (
             ml_data.select(
-                pl.col("activity_name"),
+                pl.col("activity_name").str.strip_chars(),
                 pl.col("secret_user_id").alias("secret_id"),
                 pl.col("response_start_time")
-                .str.to_datetime("%D %k:%M")
+                .str.to_datetime(date_format.value)
                 .dt.date()
                 .alias("activity_date"),
             )
@@ -113,7 +170,7 @@ def _(data_file, filter_to_applet_name, mo, pl, run_button):
     return (data,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(cs, pl):
     def calc_attendance(
         df: pl.DataFrame, participants: pl.DataFrame
@@ -141,10 +198,14 @@ def _(cs, pl):
             ((f"site_{part[0]}", f"date_{part[1]}", f"ymha_attendance"), df)
             for part, df in part_dfs.items()
         ]
+        # returns list[tuple[tuple[str], dataframe]]
+        # list of outputs. each output is a tuple of path and dataframe. path is a tuple of path segments.
 
 
     def calc_completion(
-        df: pl.DataFrame, participants: pl.DataFrame
+        df: pl.DataFrame,
+        participants: pl.DataFrame,
+        completion_columns: list[str],
     ) -> list[tuple[str, pl.DataFrame]]:
         completion = df.drop("activity_date").pivot(
             on="activity_name",
@@ -153,16 +214,6 @@ def _(cs, pl):
             maintain_order=True,
             sort_columns=True,
         )
-        activity_col_selector = cs.exclude(
-            [
-                "secret_id",
-                "nickname",
-                "first_name",
-                "last_name",
-                "site",
-                cs.matches("^room$"),
-            ]
-        )
         identifier_col_selector = cs.by_name(
             "secret_id",
             "nickname",
@@ -170,15 +221,27 @@ def _(cs, pl):
             "last_name",
             "site",
         ) | cs.matches(r"^room$")
+        activity_col_selector = ~identifier_col_selector
+        all_completion = participants.join(
+            completion, on="secret_id", how="left"
+        ).select(
+            identifier_col_selector,
+            activity_col_selector.fill_null(False),  # noqa: FBT003
+        )
+        print(all_completion.columns)
         all_completion = (
-            participants.join(completion, on="secret_id", how="left")
-            .select(
-                identifier_col_selector,
-                activity_col_selector.fill_null(False),  # noqa: FBT003
+            all_completion.with_columns(
+                complete=pl.concat_list(completion_columns).list.all(),
+                partially_complete=pl.concat_list(completion_columns).list.any(),
             )
             .with_columns(
-                complete=pl.concat_list(activity_col_selector).list.all(),
+                complete=pl.when(pl.col("complete"))
+                .then(pl.lit("TRUE"))
+                .when(pl.col("partially_complete"))
+                .then(pl.lit("PARTIALLY TRUE"))
+                .otherwise(pl.lit("FALSE"))
             )
+            .drop("partially_complete")
         )
         site_completion = all_completion.partition_by("site", as_dict=True)
         return (
@@ -190,12 +253,15 @@ def _(cs, pl):
                 ),
             ]
             + [
-                (("site_{part[0]}", "ymha_completion"), df)
+                ((f"site_{part[0]}", "ymha_completion"), df)
                 for part, df in site_completion.items()
             ]
             + [
                 (
-                    ("site_{part[0]}", f"ymha_completion_summary"),
+                    (
+                        f"site_{part[0]}",
+                        f"ymha_completion_summary",
+                    ),
                     df.select(identifier_col_selector, "complete"),
                 )
                 for part, df in site_completion.items()
@@ -206,6 +272,8 @@ def _(cs, pl):
 
 @app.cell
 def _(
+    COMPLETION_COLUMNS,
+    applet_name,
     calc_attendance,
     calc_completion,
     data,
@@ -224,7 +292,11 @@ def _(
         if (True,) in _partitioned_activities
         else []
     ) + (
-        calc_completion(_partitioned_activities[(False,)], participants_data)
+        calc_completion(
+            _partitioned_activities[(False,)],
+            participants_data,
+            COMPLETION_COLUMNS[applet_name.value],
+        )
         if (False,) in _partitioned_activities
         else []
     )
@@ -238,30 +310,54 @@ def _(Path, cs, mo, output_dir, outputs, run_button):
 
     _output_dir = Path(output_dir.value)
     if not _output_dir.is_dir():
-        disp = mo.md(
-            f"OutputDir ({_output_dir}) does not exist or is not a directory. Please update output dir input above."
+        _output_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Created output directory: {_output_dir}")
+
+    for _path_segments, _df in outputs:
+        _output_path = (
+            _output_dir.joinpath(*_path_segments).with_suffix(".xlsx").resolve()
         )
-    else:
-        for _path_segments, _df in outputs:
-            _output_path = (
-                _output_dir.joinpath(*_path_segments)
-                .with_suffix(".xlsx")
-                .resolve()
-            )
-            _output_path.parent.mkdir(parents=True, exist_ok=True)
-            _df.write_excel(
-                _output_path,
-                conditional_formats={
-                    cs.all(): {
+        _output_path.parent.mkdir(parents=True, exist_ok=True)
+        _df.write_excel(
+            _output_path,
+            conditional_formats={
+                cs.all(): [
+                    {
                         "type": "cell",
                         "criteria": "==",
                         "value": False,
                         "format": {"bg_color": "#FFC7CE"},
-                    }
-                },
-            )
-        print(f"{len(outputs)} outputs written.")
-        disp = mo.md(f"{len(outputs)} outputs written.")
+                    },
+                    {
+                        "type": "cell",
+                        "criteria": "==",
+                        "value": True,
+                        "format": {"bg_color": "#97bfa2"},
+                    },
+                    {
+                        "type": "text",
+                        "criteria": "begins with",
+                        "value": "FALS",
+                        "format": {"bg_color": "#FFC7C1"},
+                    },
+                    {
+                        "type": "text",
+                        "criteria": "begins with",
+                        "value": "TRU",
+                        "format": {"bg_color": "#97bfa1"},
+                    },
+                    {
+                        "type": "text",
+                        "criteria": "begins with",
+                        "value": "PARTIALLY TRUE",
+                        "format": {"bg_color": "#e6e887"},
+                    },
+                ],
+            },
+        )
+
+    print(f"{len(outputs)} outputs written.")
+    disp = mo.md(f"{len(outputs)} outputs written.")
     disp
     return
 

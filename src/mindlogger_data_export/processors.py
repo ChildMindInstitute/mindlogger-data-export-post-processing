@@ -145,7 +145,7 @@ class TypedResponseStructProcessor(ReportProcessor):
         return report.with_columns(
             response=pl.struct(
                 status=pl.col("item_response_status"),
-                raw_score=pl.col("rawScore"),
+                raw_score=pl.col("rawScore").cast(pl.Int64),
                 raw_response=pl.col("item_response"),
                 value=pl.struct(
                     item_type=pl.col("item").struct.field("type"),
@@ -233,7 +233,7 @@ class ItemStructProcessor(ReportProcessor):
                 .str.strip_chars()
                 .map_elements(
                     self.PARSER.parse,
-                    schema.RESPONSE_OPTIONS_SCHEMA,
+                    schema.ITEM_RESPONSE_OPTIONS_SCHEMA,
                 )
                 .alias("response_options"),
                 schema=schema.ITEM_SCHEMA,
