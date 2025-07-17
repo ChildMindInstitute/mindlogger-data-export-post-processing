@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -87,7 +87,7 @@ class WideFormat(Output):
                 # response_index=pl.col("item_option").struct.field("value"),
                 # response_name=pl.col("item_option").struct.field("name"),
             )
-            .drop("response_value", "response_raw_score")
+            .drop("response_value")
             # Generate pivot column.
             .with_columns(
                 item_option_pivot=pl.concat_str(
@@ -108,6 +108,16 @@ class WideFormat(Output):
         return "_".join([parts[1], parts[0].removeprefix("response")])
 
     @staticmethod
+    def _fill_item_response(*response_columns: str) -> Generator[pl.Expr, None, None]:
+        for response_col in response_columns:
+            yield (
+                pl.when(pl.col(response_col).is_null())
+                .then(pl.col(f"{response_col}__name"))
+                .otherwise(pl.col(response_col))
+                .alias(response_col)
+            )
+
+    @staticmethod
     def _pivot_singleselect(
         df: pl.DataFrame, option_scores: pl.DataFrame
     ) -> pl.DataFrame:
@@ -118,27 +128,25 @@ class WideFormat(Output):
             pl.col("item_option_name").alias("response_name"),
         ).drop("item_option_score", "item_option_value", "item_option_name")
 
-        return (
-            (
-                df.with_columns(
-                    response_index=pl.col("response_value").struct.field("single_value")
-                )
-                .drop("response_value")
-                .join(
-                    response_options,
-                    on=[
-                        "applet_version",
-                        "activity_flow",
-                        "activity",
-                        "item",
-                        "response_index",
-                    ],
-                    how="left",
-                    validate="m:1",
-                )
-                .with_columns(item_name=pl.col("item").struct.field("name"))
-                .drop("item")
+        df = (
+            df.with_columns(
+                response_index=pl.col("response_value").struct.field("single_value")
             )
+            .drop("response_value")
+            .join(
+                response_options,
+                on=[
+                    "applet_version",
+                    "activity_flow",
+                    "activity",
+                    "item",
+                    "response_index",
+                ],
+                how="left",
+                validate="m:1",
+            )
+            .with_columns(item_name=pl.col("item").struct.field("name"))
+            .drop("item")
             .pivot(on="item_name", values=cs.starts_with("response"), separator="__")
             .with_columns(
                 cs.starts_with("response").name.map(
@@ -146,6 +154,18 @@ class WideFormat(Output):
                 )
             )
             .drop(cs.starts_with("response"))
+        )
+
+        response_columns = {
+            s: s.rsplit("__")[0]
+            for s in cs.expand_selector(df, cs.ends_with("__score"))
+        }
+        return (
+            df.rename(response_columns)  # Rename <QUESTION>__score to <QUESTION>.
+            .with_columns(
+                WideFormat._fill_item_response(*response_columns.values())
+            )  # Use value of __name if __score is null.
+            .drop(cs.ends_with("__index", "__name"))
         )
 
     @staticmethod
@@ -156,7 +176,7 @@ class WideFormat(Output):
                 response_value=pl.col("response_value").struct.field("text"),
                 item_name=pl.col("item").struct.field("name"),
             )
-            .drop("response_raw_score", "item")
+            .drop("item")
             .pivot(on="item_name", values="response_value")
         )
 
@@ -168,7 +188,7 @@ class WideFormat(Output):
                 response_value=pl.col("response_value").struct.field("subscale"),
                 item_name=pl.col("item").struct.field("name"),
             )
-            .drop("response_raw_score", "item")
+            .drop("item")
             .pivot(on="item_name", values="response_value")
         )
 
@@ -188,10 +208,7 @@ class WideFormat(Output):
         self, df: pl.DataFrame, option_scores: pl.DataFrame
     ) -> pl.DataFrame:
         df = (
-            df.with_columns(
-                response_value=pl.col("response").struct.field("value"),
-                response_raw_score=pl.col("response").struct.field("raw_score"),
-            )
+            df.with_columns(response_value=pl.col("response").struct.field("value"))
             .drop("response")
             .with_columns(
                 response_value=pl.struct(
@@ -219,8 +236,7 @@ class WideFormat(Output):
             self._get_pivot_fn(partition_type)(partition_df, option_scores)
             for partition_type, partition_df in typed_partitions.items()
         ]
-        metadata_columns = ["legacy_user_id", "applet_version"]
-        index_struct_columns = [
+        struct_idx_columns = [
             "target_user",
             "source_user",
             "input_user",
@@ -231,17 +247,15 @@ class WideFormat(Output):
             "activity_time",
             "activity_schedule",
         ]
-        return (
-            pl.concat(pivoted_dfs, how="diagonal_relaxed")
-            .with_columns(util.unnest_structs(*index_struct_columns))
-            .drop(index_struct_columns)
-            .select(
-                pl.col("legacy_user_id"),
-                pl.col("applet_version"),
-                cs.starts_with(*index_struct_columns),
-                ~cs.starts_with(*(index_struct_columns + metadata_columns)),
-            )
+
+        df = (
+            pl.concat(pivoted_dfs, how="align")
+            .with_columns(util.unnest_structs(*struct_idx_columns))
+            .drop(struct_idx_columns)
         )
+        idx_columns = cs.starts_with(*(["applet_version"] + struct_idx_columns))
+        response_columns = cs.by_name(sorted(cs.expand_selector(df, ~idx_columns)))
+        return df.select(idx_columns, response_columns)
 
     def _format(self, data: MindloggerData) -> list[NamedOutput]:
         if (

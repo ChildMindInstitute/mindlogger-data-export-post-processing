@@ -66,6 +66,7 @@ class DropLegacyUserIdProcessor(ReportProcessor):
 
     NAME = "DropLegacyUserId"
     PRIORITY = 0
+    ENABLE = True
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         return (
