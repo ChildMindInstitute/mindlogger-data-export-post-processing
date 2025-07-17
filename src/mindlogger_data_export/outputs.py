@@ -96,7 +96,7 @@ class WideFormat(Output):
                     separator="_",
                 )
             )
-            .drop("item_option")
+            .drop("item_option", "item")
             .pivot(
                 on=["item_option_pivot"], values="response_present", sort_columns=True
             )
