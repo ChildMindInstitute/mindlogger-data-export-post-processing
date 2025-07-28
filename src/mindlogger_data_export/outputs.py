@@ -112,7 +112,7 @@ class WideFormat(Output):
         for response_col in response_columns:
             yield (
                 pl.when(pl.col(response_col).is_null())
-                .then(pl.col(f"{response_col}__name"))
+                .then(pl.col(f"{response_col}__response"))
                 .otherwise(pl.col(response_col))
                 .alias(response_col)
             )
@@ -123,14 +123,14 @@ class WideFormat(Output):
     ) -> pl.DataFrame:
         # Score single select responses.
         response_options = option_scores.with_columns(
-            pl.col("item_option_value").alias("response_index"),
+            pl.col("item_option_value").alias("response_item"),
             pl.col("item_option_score").alias("response_score"),
-            pl.col("item_option_name").alias("response_name"),
+            pl.col("item_option_name").alias("response_response"),
         ).drop("item_option_score", "item_option_value", "item_option_name")
 
         df = (
             df.with_columns(
-                response_index=pl.col("response_value").struct.field("single_value")
+                response_item=pl.col("response_value").struct.field("single_value")
             )
             .drop("response_value")
             .join(
@@ -140,7 +140,7 @@ class WideFormat(Output):
                     "activity_flow",
                     "activity",
                     "item",
-                    "response_index",
+                    "response_item",
                 ],
                 how="left",
                 validate="m:1",
@@ -161,11 +161,12 @@ class WideFormat(Output):
             for s in cs.expand_selector(df, cs.ends_with("__score"))
         }
         return (
-            df.rename(response_columns)  # Rename <QUESTION>__score to <QUESTION>.
-            .with_columns(
+            df.rename(
+                response_columns
+            ).with_columns(  # Rename <QUESTION>__score to <QUESTION>.
                 WideFormat._fill_item_response(*response_columns.values())
-            )  # Use value of __name if __score is null.
-            .drop(cs.ends_with("__index", "__name"))
+            )  # Use value of __response if __score is null.
+            # .drop(cs.ends_with("__item"))
         )
 
     @staticmethod
@@ -176,8 +177,20 @@ class WideFormat(Output):
                 response_value=pl.col("response_value").struct.field("text"),
                 item_name=pl.col("item").struct.field("name"),
             )
+            .with_columns(response_response=pl.col("response_value"))
             .drop("item")
-            .pivot(on="item_name", values="response_value")
+            .pivot(
+                on="item_name",
+                values=["response_value", "response_response"],
+                separator="__",
+            )
+            .rename(
+                lambda s: s.removesuffix("__response_response")
+                if s.endswith("__response_response")
+                else s.removesuffix("_value")
+                if s.endswith("__response_value")
+                else s
+            )
         )
 
     @staticmethod
@@ -188,8 +201,20 @@ class WideFormat(Output):
                 response_value=pl.col("response_value").struct.field("subscale"),
                 item_name=pl.col("item").struct.field("name"),
             )
+            .with_columns(response_response=pl.col("response_value"))
             .drop("item")
-            .pivot(on="item_name", values="response_value")
+            .pivot(
+                on="item_name",
+                values=["response_value", "response_response"],
+                separator="__",
+            )
+            .rename(
+                lambda s: s.removesuffix("__response_response")
+                if s.endswith("__response_response")
+                else s.removesuffix("_value")
+                if s.endswith("__response_value")
+                else s
+            )
         )
 
     PIVOT_FNS = {
@@ -230,8 +255,7 @@ class WideFormat(Output):
             item_type=pl.col("item").struct.field("type")
         ).partition_by("item_type", include_key=False, as_dict=True)  # type: ignore
 
-        # Multiple Selection
-        # Convert multiselect into one-hot encoding.
+        # Perform pivot in function selected by type.
         pivoted_dfs = [
             self._get_pivot_fn(partition_type)(partition_df, option_scores)
             for partition_type, partition_df in typed_partitions.items()
@@ -258,6 +282,9 @@ class WideFormat(Output):
         return df.select(idx_columns, response_columns)
 
     def _format(self, data: MindloggerData) -> list[NamedOutput]:
+        ml_report = data.report.with_columns(
+            utc_timezone_offset=pl.col("utc_timezone_offset").dt.to_string("iso")
+        )
         if (
             "split_activities" in self._extra
             and self._extra["split_activities"].lower() == "true"
@@ -267,7 +294,7 @@ class WideFormat(Output):
                     f"{activity[1]}",
                     self._typed_pivot(activity_df, data.item_response_options),
                 )
-                for activity, activity_df in data.report.with_columns(
+                for activity, activity_df in ml_report.with_columns(
                     activity_id=pl.col("activity").struct.field("id"),
                     activity_name=pl.col("activity").struct.field("name"),
                 )
@@ -279,7 +306,7 @@ class WideFormat(Output):
 
         return [
             NamedOutput(
-                "wide_data", self._typed_pivot(data.report, data.item_response_options)
+                "wide_data", self._typed_pivot(ml_report, data.item_response_options)
             )
         ]
 
