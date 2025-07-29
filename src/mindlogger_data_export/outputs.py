@@ -108,31 +108,30 @@ class WideFormat(Output):
         return "_".join([parts[1], parts[0].removeprefix("response")])
 
     @staticmethod
-    def _fill_item_response(*response_columns: str) -> Generator[pl.Expr, None, None]:
-        for response_col in response_columns:
-            yield (
-                pl.when(pl.col(response_col).is_null())
-                .then(pl.col(f"{response_col}__response"))
-                .otherwise(pl.col(response_col))
-                .alias(response_col)
-            )
+    def _fill_item_response(*null_score_columns: str) -> Generator[pl.Expr, None, None]:
+        for col in null_score_columns:
+            yield pl.col(f"{col}__response").alias(col)
 
     @staticmethod
     def _pivot_singleselect(
         df: pl.DataFrame, option_scores: pl.DataFrame
     ) -> pl.DataFrame:
-        # Score single select responses.
-        response_options = option_scores.with_columns(
-            pl.col("item_option_value").alias("response_item"),
-            pl.col("item_option_score").alias("response_score"),
-            pl.col("item_option_name").alias("response_response"),
-        ).drop("item_option_score", "item_option_value", "item_option_name")
+        # Rename columns in scores table.
+        response_options = option_scores.rename(
+            {
+                "item_option_value": "response_index",
+                "item_option_score": "response_score",
+                "item_option_name": "response_response",
+            }
+        )
 
         df = (
+            # Extract value of response.
             df.with_columns(
-                response_item=pl.col("response_value").struct.field("single_value")
+                response_index=pl.col("response_value").struct.field("single_value")
             )
             .drop("response_value")
+            # Join to score responses.
             .join(
                 response_options,
                 on=[
@@ -140,14 +139,17 @@ class WideFormat(Output):
                     "activity_flow",
                     "activity",
                     "item",
-                    "response_item",
+                    "response_index",
                 ],
                 how="left",
                 validate="m:1",
             )
+            # Extract item name for pivot.
             .with_columns(item_name=pl.col("item").struct.field("name"))
             .drop("item")
+            # Pivot on item_name producing 3 columns for each item.
             .pivot(on="item_name", values=cs.starts_with("response"), separator="__")
+            # Rename pivoted columns to
             .with_columns(
                 cs.starts_with("response").name.map(
                     WideFormat._map_response_column_names
@@ -156,18 +158,18 @@ class WideFormat(Output):
             .drop(cs.starts_with("response"))
         )
 
-        response_columns = {
+        # Rename score columns to bare name of item.
+        score_columns = {
             s: s.rsplit("__")[0]
             for s in cs.expand_selector(df, cs.ends_with("__score"))
         }
-        return (
-            df.rename(
-                response_columns
-            ).with_columns(  # Rename <QUESTION>__score to <QUESTION>.
-                WideFormat._fill_item_response(*response_columns.values())
-            )  # Use value of __response if __score is null.
-            # .drop(cs.ends_with("__item"))
-        )
+        # Rename <QUESTION>__score to <QUESTION>.
+        df = df.rename(score_columns)
+        null_score_columns = {
+            col for col in score_columns.values() if df[col].is_null().all()
+        }
+        # Fill null <QUESTION> columns with value of <QUESTION>__response.
+        return df.with_columns(WideFormat._fill_item_response(*null_score_columns))
 
     @staticmethod
     def _pivot_text(df: pl.DataFrame, option_scores: pl.DataFrame) -> pl.DataFrame:
