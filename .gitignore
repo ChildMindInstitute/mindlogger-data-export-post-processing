@@ -6,6 +6,7 @@ data/
 scripts/explore.ipynb
 scripts/test*
 scripts/helper*
+scripts/ymha
 __marimo__/
 
 # Python-generated files
