@@ -1,5 +1,7 @@
 """Test MindloggerData object."""
+
 # ruff: noqa
+from pandas.tests.arrays.boolean.test_arithmetic import data
 
 from pathlib import Path
 
@@ -16,21 +18,13 @@ from mindlogger_data_export import (
 )
 
 FIXTURE_DIR = Path(__file__).parent.resolve() / "data"
-WITH_REPORT = pytest.mark.datafiles(FIXTURE_DIR / "responses.csv")
+WITH_REPORT = pytest.mark.datafiles(FIXTURE_DIR)
 
 
 def test_mindlogger_data_create_nonexistent_raises_error():
     """MindloggerData.create should raise error for nonexistent directory."""
     with pytest.raises(FileNotFoundError):
         MindloggerData.create(Path("nonexistent"))
-
-
-def test_mindlogger_data_create_not_a_directory_raises_error(tmp_path: Path):
-    """MindloggerData.create should raise error for non-directory."""
-    file_path = tmp_path / "file.txt"
-    file_path.touch()
-    with pytest.raises(NotADirectoryError):
-        MindloggerData.create(file_path)
 
 
 def test_mindlogger_data_create_empty_raises_error(tmp_path: Path):
@@ -42,11 +36,15 @@ def test_mindlogger_data_create_empty_raises_error(tmp_path: Path):
 @WITH_REPORT
 def test_mindlogger_source_users(datafiles: Path):
     """Test MindloggerData.source_users."""
+    print(datafiles)
+    print(pl.read_csv(datafiles / "responses.csv").columns)
     mindlogger_data = MindloggerData.create(datafiles)
     source_users = mindlogger_data.source_users
     source_user_ids = set(user.id for user in source_users)
+    print(source_user_ids)
     assert len(source_users) == 2
     assert all(user.user_type == UserType.SOURCE for user in source_users)
+    print(source_users)
     assert source_users[0].id == "1e15e0bf-1b81-418e-9b80-20b0cb4cac33"
     assert source_users[1].id == "1e15e0bf-1b81-418e-9b80-20b0cb4cac33"
 
@@ -197,8 +195,7 @@ def test_expand_responses(report):
 
 def test_data_dictionary(report):
     _data = MindloggerData(report)
-    print(_data.data_dictionary)
-    assert _data.data_dictionary is not None
+    assert len(list(_data.data_dictionary)) != 0
 
 
 # def test_long_response():

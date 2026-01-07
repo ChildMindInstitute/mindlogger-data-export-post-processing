@@ -4,6 +4,9 @@ data/
 
 # Temp notebook
 scripts/explore.ipynb
+scripts/test*
+scripts/helper*
+__marimo__/
 
 # Python-generated files
 __pycache__/

@@ -358,7 +358,37 @@ class OptionsFormat(Output):
     NAME = "options"
 
     def _format(self, data):
-        return [NamedOutput("options", data.item_response_options)]
+        return [
+            NamedOutput(
+                "options",
+                data.report.select(
+                    "applet_version",
+                    pl.col("activity_flow")
+                    .struct.unnest()
+                    .name.prefix("activity_flow_"),
+                    pl.col("activity").struct.unnest().name.prefix("activity_"),
+                    pl.col("item").struct.unnest().name.prefix("item_"),
+                )
+                .select(
+                    "activity_flow_id",
+                    "activity_flow_name",
+                    "activity_id",
+                    "activity_name",
+                    "item_id",
+                    "item_name",
+                    "item_prompt",
+                    "item_response_options",
+                )
+                .unique()
+                .explode("item_response_options")
+                .with_columns(
+                    pl.col("item_response_options")
+                    .struct.unnest()
+                    .name.prefix("item_option_")
+                )
+                .drop("item_response_options"),
+            ),
+        ]
 
 
 class ScoredResponsesFormat(Output):

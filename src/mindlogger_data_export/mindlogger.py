@@ -84,7 +84,7 @@ class MindloggerData:
         return pl.DataFrame(
             self.report.select(
                 "applet_version",
-                util.unnest_structs("activity_flow", "activity", "item"),
+                *util.unnest_structs("activity_flow", "activity", "item"),
             ).unique()
         )
 
@@ -177,36 +177,16 @@ class MindloggerData:
         return f"MindloggerData: {self._response_data.columns}\n\n{self._response_data.head()}"
 
     @classmethod
-    def load(cls, input_dir: Path) -> pl.DataFrame:
-        """Read Mindlogger export into DataFrame.
-
-        This class method reads all reports from a Mindlogger export directory,
-        and returns a single DataFrame object.
-
-        Args:
-            input_dir: Path to directory containing Mindlogger export.
-
-        Returns:
-            DataFrame object.
-
-        Raises:
-            FileNotFoundError: If export_dir not found, or does not contain any
-                report.csv files.
-            NotADirectoryError: If export_dir is not a directory.
-        """
-        if not input_dir.exists():
-            raise FileNotFoundError(f"Export directory {input_dir} not found.")
-        if not input_dir.is_dir():
-            raise NotADirectoryError(f"{input_dir} is not a directory.")
-
-        LOG.debug("Reading report files from %s...", input_dir)
+    def load_web_export(cls, input_path: Path) -> pl.DataFrame:
+        """Read Curious web export into DataFrame."""
+        LOG.debug("Reading report files from %s...", input_path)
 
         # Read report files.
         try:
             report = pl.concat(
                 (
                     pl.read_csv(f, infer_schema_length=None)
-                    for f in input_dir.glob(MINDLOGGER_REPORT_PATTERN)
+                    for f in input_path.glob(MINDLOGGER_REPORT_PATTERN)
                 ),
                 how="diagonal_relaxed",
             )
@@ -219,20 +199,49 @@ class MindloggerData:
         except pl.exceptions.ComputeError:
             LOG.exception("Error reading report files")
             raise
-
         return report
+
+    @classmethod
+    def load_api_export(cls, input_path: Path) -> pl.DataFrame:
+        """Read Curious export from API into DataFrame."""
+        LOG.debug("Reading API JSON export.")
+        return pl.read_json(input_path)
+
+    @classmethod
+    def load(cls, input_path: Path) -> pl.DataFrame:
+        """Read Mindlogger export into DataFrame.
+
+        This class method reads all reports from a Mindlogger export directory,
+        and returns a single DataFrame object.
+
+        Args:
+            input_path: Path to directory containing Mindlogger export.
+
+        Returns:
+            DataFrame object.
+
+        Raises:
+            FileNotFoundError: If export_dir not found, or does not contain any
+                report.csv files.
+            NotADirectoryError: If export_dir is not a directory.
+        """
+        if not input_path.exists():
+            raise FileNotFoundError(f"Export directory {input_path} not found.")
+        if input_path.is_dir():
+            return cls.load_web_export(input_path)
+        return cls.load_api_export(input_path)
 
     @classmethod
     def create(
         cls,
-        input_dir: Path,
+        input_path: Path,
     ) -> MindloggerData:
         """Loads Mindlogger report export and creates MindloggerData for inspection.
 
         Args:
-            input_dir: Mindlogger export directory containing report*.csv.
+            input_path: Mindlogger export directory containing report*.csv.
 
         Returns:
             MindloggerData object.
         """
-        return cls(cls.load(input_dir))
+        return cls(cls.load(input_path))

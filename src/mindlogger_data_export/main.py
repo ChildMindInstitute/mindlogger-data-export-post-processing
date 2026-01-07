@@ -36,7 +36,7 @@ def main(config: OutputConfig) -> None:
         logging.basicConfig(level=config.log_level.upper())
         logging.debug("Starting MindLogger data export tool with config: %s.", config)
 
-        ml_data = MindloggerData.create(config.input_dir)
+        ml_data = MindloggerData.create(config.input)
         writer = OutputWriter.create(config.output_format)
 
         for output_type in config.output_types_or_all:

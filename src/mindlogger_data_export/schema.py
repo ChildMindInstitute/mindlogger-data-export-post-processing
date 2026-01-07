@@ -15,6 +15,26 @@ USER_SCHEMA = pl.Schema(
     }
 )
 
+TARGET_USER_SCHEMA = pl.Schema(
+    {"id": pl.String, "secret_id": pl.String, "nickname": pl.String, "tag": pl.String}
+)
+
+INPUT_USER_SCHEMA = pl.Schema(
+    {"id": pl.String, "secret_id": pl.String, "nickname": pl.String}
+)
+
+ACCOUNT_USER_SCHEMA = pl.Schema({"id": pl.String, "secret_id": pl.String})
+
+SOURCE_USER_SCHEMA = pl.Schema(
+    {
+        "id": pl.String,
+        "secret_id": pl.String,
+        "nickname": pl.String,
+        "relation": pl.String,
+        "tag": pl.String,
+    }
+)
+
 
 ##### Full Set of Response Types / Labels #####
 # From: https://github.com/ChildMindInstitute/mindlogger-admin/blob/develop/src/shared/consts.tsx#L107

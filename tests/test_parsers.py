@@ -5,9 +5,13 @@ from datetime import date, time, timedelta
 import pytest
 
 from mindlogger_data_export.parsers import (
+    DateResponseParser,
     FullResponseParser,
+    GeoResponseParser,
     OptionsParser,
     SingleSelectResponseParser,
+    SubscaleResponseParser,
+    TextResponseParser,
 )
 from mindlogger_data_export.schema import RESPONSE_VALUE_DICT_SCHEMA
 
@@ -194,17 +198,17 @@ def test_options_parser(options_field, expected):
     [
         pytest.param(
             "value: 10",
-            {"null_value": None, "value": "10", "optional_text": None},
+            {"null_value": None, "single_value": 10, "optional_text": None},
             id="value_only",
         ),
         pytest.param(
             "value: 1 | text: optional text",
-            {"null_value": None, "value": "1", "optional_text": "optional text"},
+            {"null_value": None, "single_value": 1, "optional_text": "optional text"},
             id="with_optional_text",
         ),
         pytest.param(
             "value: null",
-            {"null_value": True, "value": None, "optional_text": None},
+            {"null_value": True, "single_value": None, "optional_text": None},
             id="null_value",
         ),
     ],
@@ -213,4 +217,96 @@ def test_single_select_response_parser(input_str, expected):
     parser = SingleSelectResponseParser()
     parsed = parser.parse(input_str)
     assert parsed is not None
-    assert parsed == expected
+    assert parsed == RESPONSE_VALUE_DICT_SCHEMA | expected
+
+
+def test_multiselect_response_parser():
+    pass
+
+
+@pytest.mark.parametrize(
+    ("input_str", "expected"),
+    [
+        pytest.param(
+            "Some text here",
+            {"type": "text", "text": "Some text here"},
+            id="text",
+        ),
+        pytest.param(
+            "Some multiline\ntext here",
+            {"type": "text", "text": "Some multiline\ntext here"},
+            id="text_multiline",
+        ),
+    ],
+)
+def test_text_response_parser(input_str, expected):
+    parser = TextResponseParser()
+    parsed = parser.parse(input_str)
+    assert parsed is not None
+    assert parsed == RESPONSE_VALUE_DICT_SCHEMA | expected
+
+
+@pytest.mark.parametrize(
+    ("input_str", "expected"),
+    [
+        pytest.param(
+            "4.2",
+            {"type": "subscale", "subscale": 4.2},
+            id="text",
+        )
+    ],
+)
+def test_subscale_response_parser(input_str, expected):
+    parser = SubscaleResponseParser()
+    parsed = parser.parse(input_str)
+    assert parsed is not None
+    assert parsed == RESPONSE_VALUE_DICT_SCHEMA | expected
+
+
+@pytest.mark.parametrize(
+    ("input_str", "expected"),
+    [
+        pytest.param(
+            "geo: lat 40.7128 long -74.0060",
+            {"type": "geo", "geo": {"latitude": 40.7128, "longitude": -74.0060}},
+            id="geo",
+        ),
+        pytest.param(
+            "geo: lat (40.7128) / long (-74.0060)",
+            {"type": "geo", "geo": {"latitude": 40.7128, "longitude": -74.0060}},
+            id="geo_parens",
+        ),
+    ],
+)
+def test_geo_response_parser(input_str, expected):
+    parser = GeoResponseParser()
+    parsed = parser.parse(input_str)
+    assert parsed is not None
+    assert parsed == RESPONSE_VALUE_DICT_SCHEMA | expected
+
+
+@pytest.mark.parametrize(
+    ("input_str", "expected"),
+    [
+        pytest.param(
+            "date: 1/2/21", {"type": "date", "date": date(2021, 2, 1)}, id="date"
+        ),
+        pytest.param(
+            "date: 04/05/2021",
+            {"type": "date", "date": date(2021, 5, 4)},
+            id="date_padded",
+        ),
+        pytest.param(
+            "date: 26/11/2024", {"type": "date", "date": date(2024, 11, 26)}, id="date2"
+        ),
+    ],
+)
+def test_date_response_parser(input_str, expected):
+    parser = DateResponseParser()
+    parsed = parser.parse(input_str)
+    assert parsed is not None
+    assert parsed == RESPONSE_VALUE_DICT_SCHEMA | expected
+
+
+def test_typed_response_parser():
+    pass

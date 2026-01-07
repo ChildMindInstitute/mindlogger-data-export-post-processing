@@ -31,8 +31,8 @@ class OutputTypesInfo:
 class OutputConfig:
     """Run the MindLogger data export tool."""
 
-    input_dir: Annotated[Path, arg(aliases=["-i"])]
-    """Path to input directory, containing MindLogger data export."""
+    input: Annotated[Path, arg(aliases=["-i"])]
+    """Path to either input directory containing MindLogger data export or JSON file containing API export."""
 
     output_dir: Annotated[Path | None, arg(aliases=["-o"])] = None
     """Path to output directory, where processed data will be written. Defaults to input_dir."""
@@ -62,9 +62,14 @@ class OutputConfig:
     """Timezone to which datetimes will be converted."""
 
     @property
+    def input_dir(self) -> Path:
+        """Get input directory or parent directory if input is file."""
+        return self.input if self.input.is_dir() else self.input.parent
+
+    @property
     def output_dir_or_default(self) -> Path:
         """Get output directory, defaulting to input directory."""
-        return self.output_dir or (self.input_dir / "output")
+        return self.output_dir or (self.input_dir / "output")  # pyright: ignore[reportGeneralTypeIssues]
 
     @property
     def output_types_or_all(self) -> list[str]:
