@@ -11,6 +11,7 @@ dependencies = [
     "lark>=1.2.2",
     "packaging>=24.2",
     "polars>=1.31.0",
+    "rich>=14.2.0",
     "tyro>=0.9.5",
     "xlsxwriter>=3.2.5",
 ]
