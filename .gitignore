@@ -3,10 +3,7 @@ data/
 !tests/data
 
 # Temp notebook
-scripts/explore.ipynb
-scripts/test*
-scripts/helper*
-scripts/ymha
+scripts/
 __marimo__/
 
 # Python-generated files
