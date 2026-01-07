@@ -205,6 +205,7 @@ class MindloggerData:
     def load_api_export(cls, input_path: Path) -> pl.DataFrame:
         """Read Curious export from API into DataFrame."""
         LOG.debug("Reading API JSON export.")
+        raise NotImplementedError
         return pl.read_json(input_path)
 
     @classmethod
