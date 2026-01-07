@@ -97,10 +97,10 @@ RESPONSE_VALUE_DICT_SCHEMA: dict[str, Any] = {
 
 RESPONSE_SCHEMA = pl.Schema(
     {
-        "status": pl.String,
+        "status": pl.String(),
         "value": RESPONSE_VALUE_SCHEMA,
-        "raw_response": pl.String,
-        "raw_score": pl.Int64,
+        "raw_response": pl.String(),
+        "raw_score": pl.Int64(),
     }
 )
 
@@ -110,29 +110,33 @@ ITEM_RESPONSE_OPTIONS_SCHEMA = pl.List(
 
 ITEM_SCHEMA = pl.Schema(
     {
-        "id": pl.String,
-        "name": pl.String,
-        "prompt": pl.String,
+        "id": pl.String(),
+        "name": pl.String(),
+        "prompt": pl.String(),
         "type": pl.Enum(ItemType),
-        "raw_options": pl.String,
+        "raw_options": pl.String(),
         "response_options": ITEM_RESPONSE_OPTIONS_SCHEMA,
     }
 )
 ACTIVITY_FLOW_SCHEMA = pl.Schema(
-    {"id": pl.String, "name": pl.String, "submission_id": pl.String}
+    {"id": pl.String(), "name": pl.String(), "submission_id": pl.String()}
 )
-ACTIVITY_SCHEMA = pl.Schema({"id": pl.String, "name": pl.String})
-ACTIVITY_SUBMISSION_SCHEMA = pl.Schema({"id": pl.String, "review_id": pl.String})
+ACTIVITY_SCHEMA = pl.Schema({"id": pl.String(), "name": pl.String()})
+ACTIVITY_SUBMISSION_SCHEMA = pl.Schema({"id": pl.String(), "review_id": pl.String()})
 ACTIVITY_TIME_SCHEMA = pl.Schema(
     {"start_time": pl.Datetime("ms", "UTC"), "end_time": pl.Datetime("ms", "UTC")}
 )
 ACTIVITY_SCHEDULE_SCHEMA = pl.Schema(
-    {"id": pl.String, "history_id": pl.String, "start_time": pl.Datetime("ms", "UTC")}
+    {
+        "id": pl.String(),
+        "history_id": pl.String(),
+        "start_time": pl.Datetime("ms", "UTC"),
+    }
 )
 
 INTERNAL_SCHEMA = pl.Schema(
     {
-        "applet_version": pl.String,
+        "applet_version": pl.String(),
         "utc_timezone_offset": pl.Duration("ms"),
         "target_user": pl.Struct(USER_SCHEMA),
         "source_user": pl.Struct(USER_SCHEMA),
