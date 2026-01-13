@@ -3,7 +3,8 @@ data/
 !tests/data
 
 # Temp notebook
-scripts/explore.ipynb
+scripts/
+__marimo__/
 
 # Python-generated files
 __pycache__/

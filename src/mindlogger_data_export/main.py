@@ -15,6 +15,8 @@ from .writers import OutputWriter
 
 app = SubcommandApp()
 
+LOG = logging.getLogger(__name__)
+
 
 @app.command
 def output_types_info() -> None:
@@ -34,18 +36,18 @@ def main(config: OutputConfig) -> None:
     """Run data export transformations to produce outputs."""
     try:
         logging.basicConfig(level=config.log_level.upper())
-        logging.debug("Starting MindLogger data export tool with config: %s.", config)
+        LOG.debug("Starting MindLogger data export tool with config: %s.", config)
 
-        ml_data = MindloggerData.create(config.input_dir)
+        ml_data = MindloggerData.create(config.input)
         writer = OutputWriter.create(config.output_format)
 
         for output_type in config.output_types_or_all:
             if output_type not in Output.TYPES:
                 raise ValueError(f"Unknown output type argument: {output_type}")  # noqa: TRY301
-            logging.debug("Producing output type [%s]", output_type)
+            LOG.debug("Producing output type [%s]", output_type)
             output_producer = Output.TYPES[output_type](config.extra)
             outputs = output_producer.produce(ml_data)
-            logging.debug(
+            LOG.debug(
                 "Output type (%s) produced (%d) outputs", output_type, len(outputs)
             )
             for output in outputs:
@@ -57,8 +59,8 @@ def main(config: OutputConfig) -> None:
     except Exception as e:
         if config.log_level == LogLevel.DEBUG:
             raise
-        logging.info(e)
-        logging.info("Exiting...")
+        LOG.info(e)
+        LOG.info("Exiting...")
 
 
 def cli() -> None:

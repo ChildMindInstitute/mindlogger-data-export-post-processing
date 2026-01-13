@@ -5,7 +5,7 @@ from typing import Any, Protocol
 
 from lark import Lark, Transformer, v_args
 
-from .schema import RESPONSE_VALUE_DICT_SCHEMA
+from .schema import RESPONSE_VALUE_DICT_SCHEMA, ItemType
 
 
 class ResponseParser(Protocol):
@@ -468,36 +468,9 @@ class SingleSelectResponseParser(ResponseParser):
 class TextResponseParser(ResponseParser):
     """Parse response string to dict using Lark grammar."""
 
-    RESPONSE_GRAMMAR = r"""
-    start: text_resp
-
-    // Matches any text response.
-    text_resp: _text
-    _text: /.+/s
-    """
-
-    class TextResponseTransformer(Transformer):
-        """Transform Lark parse tree to dict."""
-
-        @v_args(inline=True)
-        def start(self, value, optional_text=None):  # noqa: D102
-            if optional_text:
-                value = value | optional_text
-            return RESPONSE_VALUE_DICT_SCHEMA | value
-
-        @v_args(inline=True)
-        def text_resp(self, text):  # noqa: D102
-            return {"type": "text", "text": text.value}
-
-    def __init__(self):
-        """Initialize ResponseParser."""
-        self._transformer = self.TextResponseTransformer()
-        self._parser = Lark(self.RESPONSE_GRAMMAR)
-        self._types = RESPONSE_VALUE_DICT_SCHEMA.keys()
-
     def parse(self, response: str) -> dict[str, Any]:
         """Parse response string to dict."""
-        return self._transformer.transform(self._parser.parse(response))
+        return RESPONSE_VALUE_DICT_SCHEMA | {"type": "text", "text": response}
 
 
 class SubscaleResponseParser(ResponseParser):
@@ -508,21 +481,22 @@ class SubscaleResponseParser(ResponseParser):
         return RESPONSE_VALUE_DICT_SCHEMA | {
             "type": "subscale",
             "subscale": float(response),
-        }  # self._transformer.transform(self._parser.parse(response))
+        }
 
 
 class TypedResponseParser(ResponseParser):
     """Group all typed response parsers."""
 
     def __init__(self) -> None:
-        self._parsers = {
-            "singleSelect": SingleSelectResponseParser(),
-            "multiSelect": MultiSelectResponseParser(),
-            "text": TextResponseParser(),
-            "subscale": SubscaleResponseParser(),
-            "date": DateResponseParser(),
-            "geolocation": GeoResponseParser(),
+        self._parsers: dict[ItemType, ResponseParser] = {
+            ItemType.SingleSelection: SingleSelectResponseParser(),
+            ItemType.MultipleSelection: MultiSelectResponseParser(),
+            ItemType.Text: TextResponseParser(),
+            ItemType.Subscale: SubscaleResponseParser(),
+            ItemType.Date: DateResponseParser(),
+            ItemType.Geolocation: GeoResponseParser(),
         }
+
         self._default_parser = FullResponseParser()
 
     def parse(self, response: str) -> dict[str, Any]:
@@ -531,7 +505,9 @@ class TypedResponseParser(ResponseParser):
 
     def parse_typed(self, item_type: str, response: str) -> dict[str, Any]:
         """Distribute parsing based on item type."""
-        return self._parsers.get(item_type, self._default_parser).parse(response)
+        return self._parsers.get(ItemType(item_type), self._default_parser).parse(
+            response
+        )
 
 
 class OptionsTransformer(Transformer):

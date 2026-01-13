@@ -341,30 +341,39 @@ class SubscaleProcessor(ReportProcessor):
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Process subscale columns."""
         subscale_columns = cs.starts_with("subscale_") | cs.by_name(
-            {"activity_score", "activity_score_lookup_text"}
+            "activity_score", "activity_score_lookup_text", require_all=False
         )
-        index_columns = ~subscale_columns & ~cs.by_name(
-            ItemStructProcessor.COLUMNS, ResponseStructProcessor.COLUMNS
+        if len(cs.expand_selector(report, subscale_columns)) == 0:
+            return report
+
+        index_columns = ~(
+            subscale_columns
+            | cs.by_name(ItemStructProcessor.COLUMNS, ResponseStructProcessor.COLUMNS)
         )
         LOG.debug(
             "Subscale Columns: %s", ",\n".join(report.select(subscale_columns).columns)
         )
         LOG.debug("Index Columns: %s", ",\n".join(report.select(index_columns).columns))
 
+        subscales = (
+            report.unpivot(
+                index=index_columns,
+                on=subscale_columns,
+                variable_name="item_id",
+                value_name="item_response",
+            )
+            .filter(pl.col("item_response").is_not_null())
+            .with_columns(
+                item_type=pl.lit("subscale"),
+                item_name=pl.col("item_id").str.replace("subscale_name_", ""),
+                item_response_status=pl.lit("completed"),
+            )
+        )
+
         return pl.concat(
             [
                 report.select(~subscale_columns),
-                report.unpivot(
-                    index=index_columns,
-                    on=subscale_columns,
-                    variable_name="item_id",
-                    value_name="item_response",
-                )
-                .filter(pl.col("item_response").is_not_null())
-                .with_columns(
-                    item_type=pl.lit("subscale"),
-                    item_name=pl.col("item_id").str.replace("subscale_name_", ""),
-                ),
+                subscales,
             ],
             how="diagonal_relaxed",
         )

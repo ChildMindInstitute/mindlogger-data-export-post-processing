@@ -3,21 +3,15 @@
 from __future__ import annotations
 
 import logging
+from collections import abc
 from functools import cached_property
 from pathlib import Path
 
 import polars as pl
 
-from . import util
-from .models import MindloggerUser, UserType
-from .processors import ReportProcessor
+from . import config, models, processors, util
 
 LOG = logging.getLogger(__name__)
-
-MINDLOGGER_REPORT_PATTERN = "*responses*.csv"
-ACTIVITY_FLOW_PATTERN = "activity_flow*.csv"
-FLOW_ITEM_HISTORY_PATTERN = "flow_item_history*.csv"
-SCHEDULE_HISTORY_PATTERN = "schedule_history*.csv"
 
 
 class MindloggerData:
@@ -49,33 +43,33 @@ class MindloggerData:
         return MindloggerData.expand_options(self.long_response_report)
 
     @cached_property
-    def input_users(self) -> list[MindloggerUser]:
+    def input_users(self) -> list[models.MindloggerUser]:
         """Input users in report."""
-        return self._users(UserType.INPUT)
+        return self._users(models.UserType.INPUT)
 
     @cached_property
-    def target_users(self) -> list[MindloggerUser]:
+    def target_users(self) -> list[models.MindloggerUser]:
         """Target users in report."""
-        return self._users(UserType.TARGET)
+        return self._users(models.UserType.TARGET)
 
     @cached_property
-    def source_users(self) -> list[MindloggerUser]:
+    def source_users(self) -> list[models.MindloggerUser]:
         """Source users in report."""
-        return self._users(UserType.SOURCE)
+        return self._users(models.UserType.SOURCE)
 
     @cached_property
-    def account_users(self) -> list[MindloggerUser]:
+    def account_users(self) -> list[models.MindloggerUser]:
         """Account users in report."""
-        return self._users(UserType.ACCOUNT)
+        return self._users(models.UserType.ACCOUNT)
 
     @cached_property
-    def users(self) -> dict[UserType, list[MindloggerUser]]:
+    def users(self) -> dict[models.UserType, list[models.MindloggerUser]]:
         """Get users for specific type."""
         return {
-            UserType.INPUT: self.input_users,
-            UserType.TARGET: self.target_users,
-            UserType.SOURCE: self.source_users,
-            UserType.ACCOUNT: self.account_users,
+            models.UserType.INPUT: self.input_users,
+            models.UserType.TARGET: self.target_users,
+            models.UserType.SOURCE: self.source_users,
+            models.UserType.ACCOUNT: self.account_users,
         }
 
     @cached_property
@@ -84,7 +78,7 @@ class MindloggerData:
         return pl.DataFrame(
             self.report.select(
                 "applet_version",
-                util.unnest_structs("activity_flow", "activity", "item"),
+                *util.unnest_structs("activity_flow", "activity", "item"),
             ).unique()
         )
 
@@ -163,11 +157,11 @@ class MindloggerData:
             .select(pl.exclude("response_value_matrix", "response_value_geo"))
         )
 
-    def _users(self, user_type: UserType) -> list[MindloggerUser]:
+    def _users(self, user_type: models.UserType) -> list[models.MindloggerUser]:
         """Get users for specific type."""
         return list(
             map(
-                MindloggerUser.from_struct_factory(user_type),
+                models.MindloggerUser.from_struct_factory(user_type),
                 self.report.get_column(user_type.value).unique(),
             )
         )
@@ -177,14 +171,38 @@ class MindloggerData:
         return f"MindloggerData: {self._response_data.columns}\n\n{self._response_data.head()}"
 
     @classmethod
-    def load(cls, input_dir: Path) -> pl.DataFrame:
+    def load_csv_export(cls, input_paths: abc.Iterable[Path]) -> pl.DataFrame:
+        """Read Curious web export into DataFrame."""
+        LOG.debug("Reading report files: %s", input_paths)
+
+        # Read report files.
+        try:
+            report = pl.concat(
+                (pl.read_csv(f, infer_schema_length=None) for f in input_paths),
+                how="diagonal_relaxed",
+            )
+            for proc in sorted(
+                processors.ReportProcessor.PROCESSORS, key=lambda x: x.PRIORITY
+            ):
+                if not proc.ENABLE:
+                    LOG.debug("Skipping disabled processor (%s)", proc.NAME)
+                    continue
+                LOG.debug("Running processor %s...", proc.NAME)
+                report = proc().process(report)
+        except pl.exceptions.ComputeError:
+            LOG.exception("Error reading report files")
+            raise
+        return report
+
+    @classmethod
+    def load(cls, input_path: Path) -> pl.DataFrame:
         """Read Mindlogger export into DataFrame.
 
         This class method reads all reports from a Mindlogger export directory,
         and returns a single DataFrame object.
 
         Args:
-            input_dir: Path to directory containing Mindlogger export.
+            input_path: Path to directory containing Mindlogger export.
 
         Returns:
             DataFrame object.
@@ -194,45 +212,25 @@ class MindloggerData:
                 report.csv files.
             NotADirectoryError: If export_dir is not a directory.
         """
-        if not input_dir.exists():
-            raise FileNotFoundError(f"Export directory {input_dir} not found.")
-        if not input_dir.is_dir():
-            raise NotADirectoryError(f"{input_dir} is not a directory.")
-
-        LOG.debug("Reading report files from %s...", input_dir)
-
-        # Read report files.
-        try:
-            report = pl.concat(
-                (
-                    pl.read_csv(f, infer_schema_length=None)
-                    for f in input_dir.glob(MINDLOGGER_REPORT_PATTERN)
-                ),
-                how="diagonal_relaxed",
+        if not input_path.exists():
+            raise FileNotFoundError(f"Export path {input_path} not found.")
+        if input_path.is_dir():
+            return cls.load_csv_export(
+                input_path.glob(config.MINDLOGGER_REPORT_PATTERN)
             )
-            for proc in sorted(ReportProcessor.PROCESSORS, key=lambda x: x.PRIORITY):
-                if not proc.ENABLE:
-                    LOG.debug("Skipping disabled processor (%s)", proc.NAME)
-                    continue
-                LOG.debug("Running processor %s...", proc.NAME)
-                report = proc().process(report)
-        except pl.exceptions.ComputeError:
-            LOG.exception("Error reading report files")
-            raise
-
-        return report
+        return cls.load_csv_export([input_path])
 
     @classmethod
     def create(
         cls,
-        input_dir: Path,
+        input_path: Path,
     ) -> MindloggerData:
         """Loads Mindlogger report export and creates MindloggerData for inspection.
 
         Args:
-            input_dir: Mindlogger export directory containing report*.csv.
+            input_path: Mindlogger export directory containing report*.csv.
 
         Returns:
             MindloggerData object.
         """
-        return cls(cls.load(input_dir))
+        return cls(cls.load(input_path))
