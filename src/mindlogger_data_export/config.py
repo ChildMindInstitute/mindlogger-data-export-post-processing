@@ -11,6 +11,11 @@ from tyro.conf import EnumChoicesFromValues, UseAppendAction, arg
 
 from .outputs import Output
 
+MINDLOGGER_REPORT_PATTERN = "*responses*.csv"
+ACTIVITY_FLOW_PATTERN = "activity_flow*.csv"
+FLOW_ITEM_HISTORY_PATTERN = "flow_item_history*.csv"
+SCHEDULE_HISTORY_PATTERN = "schedule_history*.csv"
+
 
 class LogLevel(StrEnum):
     """Enumeration of logging levels."""
@@ -32,7 +37,10 @@ class OutputConfig:
     """Run the MindLogger data export tool."""
 
     input: Annotated[Path, arg(aliases=["-i"])]
-    """Path to either input directory containing MindLogger data export or JSON file containing API export."""
+    f"""Path to either input directory containing Curious data export or csv file produced by Curious.
+
+    If a directory is passed in, we look for files in the directory matching /{MINDLOGGER_REPORT_PATTERN}/.
+    """
 
     output_dir: Annotated[Path | None, arg(aliases=["-o"])] = None
     """Path to output directory, where processed data will be written. Defaults to input_dir."""
