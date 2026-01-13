@@ -69,7 +69,7 @@ class OutputConfig:
     @property
     def output_dir_or_default(self) -> Path:
         """Get output directory, defaulting to input directory."""
-        return self.output_dir or (self.input_dir / "output")  # pyright: ignore[reportGeneralTypeIssues]
+        return self.output_dir or (self.input_dir / "output")
 
     @property
     def output_types_or_all(self) -> list[str]:
