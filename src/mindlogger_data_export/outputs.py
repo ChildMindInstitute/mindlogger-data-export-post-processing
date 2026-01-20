@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from abc import ABC
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
@@ -311,6 +312,149 @@ class WideFormat(Output):
                 "wide_data", self._typed_pivot(ml_report, data.item_response_options)
             )
         ]
+
+
+class RedcapImportFormat(WideFormat):
+    """Wide format specific for importing to REDCap."""
+
+    NAME = "redcap"
+
+    def __init__(self, project: str = "curious_parent_arm_1", *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._project = project
+        self._instrument_row_count: dict[str, int | None] = {}
+
+    @staticmethod
+    def _normalize_column_name(col: str) -> str:
+        """Replace chains of underscores with single underscore."""
+        return re.sub(r"_+", "_", col).lower()
+
+    def _prepare_activity_columns(
+        self, df: pl.DataFrame, activity_prefix: str
+    ) -> pl.DataFrame:
+        """Rename and transform columns for a single activity."""
+        # Prepend activity prefix and normalize underscores
+        df = df.rename(
+            {
+                col: self._normalize_column_name(f"{activity_prefix}_{col}")
+                for col in df.columns
+            }
+        )
+
+        # Clean up common suffixes
+        df = df.rename({col: col.replace("_user", "") for col in df.columns}).rename(
+            {
+                col: col[:-5]
+                for col in df.columns
+                if col.endswith("_start_time", "_end_time")
+            }
+        )
+
+        # Handle response columns
+        # Text remains the same, selections = index + 1
+        response_cols = [col for col in df.columns if col.endswith("_response")]
+        index_cols = [col for col in df.columns if col.endswith("_index")]
+        index_bases = {col.replace("_index", "") for col in index_cols}
+        text_item_response_cols = [
+            col
+            for col in response_cols
+            if col.replace("_response", "") not in index_bases
+        ]
+        df = df.select(
+            [
+                col
+                for col in df.columns
+                if not (
+                    col.endswith("_response") and col not in text_item_response_cols
+                )
+            ]
+        )
+        for col in index_cols:
+            response_col = col.replace("_index", "_response")
+            df = df.with_columns([(pl.col(col) + 1).alias(response_col)])
+        df = df.select([col for col in df.columns if not col.endswith("_index")])
+
+        # Drop bare item columns that have a corresponding _response column
+        # These are score columns that we don't need
+        response_bases = {
+            col.replace("_response", "")
+            for col in df.columns
+            if col.endswith("_response")
+        }
+        return df.select([col for col in df.columns if col not in response_bases])
+
+    def _format_activity(self, df: pl.DataFrame, activity_name: str) -> pl.DataFrame:
+        """Format a single activity's data for REDCap import."""
+        activity_prefix = activity_name.lower()
+
+        # Extract record_id BEFORE column transformations
+        record_id = df.select("target_user_secret_id")
+
+        df = self._prepare_activity_columns(df, activity_prefix)
+        df = self._add_redcap_metadata(df, activity_prefix, record_id)
+
+        # Track row count for this instrument
+        self._instrument_row_count[activity_name] = df.shape[0]
+
+        return df
+
+    def _add_redcap_metadata(
+        self, df: pl.DataFrame, activity_prefix: str, record_id: pl.DataFrame
+    ) -> pl.DataFrame:
+        """Add REDCap-required columns and form completion status."""
+        # Add required REDCap columns using pre-extracted record_id
+        df = df.with_columns(
+            [
+                record_id.to_series().alias("record_id"),
+                pl.lit(self._project).alias("redcap_event_name"),
+            ]
+        )
+
+        # Remove all-null columns
+        df = df.select([s for s in df if s.null_count() != len(s)])
+
+        # Reorder: required columns first, then data columns
+        required_cols = ["record_id", "redcap_event_name"]
+        account_cols = [
+            col
+            for col in df.columns
+            if "account_id" in col or "account_secret_id" in col
+        ]
+        data_cols = [
+            col
+            for col in df.columns
+            if col not in required_cols and col not in account_cols
+        ]
+
+        df = df.select(required_cols + data_cols)
+
+        # Add form completion status (2 = Complete)
+        return df.with_columns([pl.lit(2).alias(f"{activity_prefix}_complete")])
+
+    def _format(self, data: MindloggerData) -> list[NamedOutput]:
+        """Format data for REDCap import, split by activity."""
+        # Force split_activities to be True for REDCap format
+        original_extra = self._extra.copy() if hasattr(self, "_extra") else {}
+        self._extra = {**original_extra, "split_activities": "true"}
+
+        # Get wide format outputs (one per activity)
+        wide_outputs = super()._format(data)
+
+        # Restore original extra
+        self._extra = original_extra
+
+        # Format each activity for REDCap
+        outputs = []
+        for wide_output in wide_outputs:
+            activity_name = wide_output.name
+            formatted_df = self._format_activity(wide_output.output, activity_name)
+            outputs.append(NamedOutput(f"{activity_name}_redcap", formatted_df))
+
+        return outputs
+
+    def get_instrument_row_counts(self) -> dict[str, int | None]:
+        """Return the row count for each instrument processed."""
+        return self._instrument_row_count.copy()
 
 
 class LongDataFormat(Output):
