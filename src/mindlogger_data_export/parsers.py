@@ -480,7 +480,11 @@ class SubscaleResponseParser(ResponseParser):
         """Parse response string to dict."""
         return RESPONSE_VALUE_DICT_SCHEMA | {
             "type": "subscale",
-            "subscale": float(response),
+            "subscale": float(
+                response.split("value:")[-1].strip()
+                if response.startswith("value:")
+                else response
+            ),
         }
 
 
