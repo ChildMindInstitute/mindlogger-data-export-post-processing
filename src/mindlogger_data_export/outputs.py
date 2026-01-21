@@ -96,23 +96,14 @@ class WideFormat(Output):
 
     @staticmethod
     def _pivot_multiselect(
-        df: pl.DataFrame, option_scores: pl.DataFrame, *, include_options: bool = False
+        df: pl.DataFrame,
+        option_scores: pl.DataFrame,
+        *,
+        include_options: bool = False,  # noqa: ARG004
     ) -> pl.DataFrame:
         del option_scores
-        item_options_map: pl.DataFrame = pl.DataFrame()
-        # Extract `response_options` before exploding (all options share the same list)
-        if include_options:
-            # Get unique `response_options` per item (before exploding)
-            item_options_map = df.select(
-                [
-                    pl.col("item").struct.field("name").alias("item_name"),
-                    pl.col("item")
-                    .struct.field("response_options")
-                    .alias("response_options"),
-                ]
-            ).unique(subset=["item_name"])
 
-        df = (
+        return (
             df.with_columns(item_option=pl.col("item").struct.field("response_options"))
             .explode("item_option")
             # Generate value column indicating presence of response.
@@ -135,17 +126,6 @@ class WideFormat(Output):
                 on=["item_option_pivot"], values="response_present", sort_columns=True
             )
         )
-
-        # Join back the `response_options` for each item
-        if include_options:
-            for row in item_options_map.iter_rows(named=True):
-                item_name = row["item_name"]
-                options_col = f"{item_name}_options"
-                df = df.with_columns(
-                    [pl.lit(row["response_options"]).alias(options_col)]
-                )
-
-        return df
 
     @staticmethod
     def _map_response_column_names(cname: str) -> str:
@@ -213,7 +193,12 @@ class WideFormat(Output):
             ]
 
         df = (
-            df.pivot(on="item_name", values=pivot_values, separator="__")
+            df.pivot(
+                on="item_name",
+                values=pivot_values,
+                separator="__",
+                aggregate_function="first" if include_options else None,
+            )
             # Rename pivoted columns
             .with_columns(
                 cs.starts_with("response").name.map(
@@ -293,6 +278,7 @@ class WideFormat(Output):
             on="item_name",
             values=pivot_values,
             separator="__",
+            aggregate_function="first" if include_options else None,
         ).rename(
             lambda s: s.removesuffix("__response_response")
             if s.endswith("__response_response")
@@ -435,7 +421,11 @@ class RedcapImportFormat(WideFormat):
         )
 
         # Stringify `_options` columns
-        options_cols = [col for col in df.columns if col.endswith("_options")]
+        options_cols = [
+            col
+            for col in df.columns
+            if col.endswith("_options") or "_response_options_" in col
+        ]
         for col in options_cols:
             df = df.with_columns(
                 [
@@ -475,6 +465,18 @@ class RedcapImportFormat(WideFormat):
             if base_name not in score_bases:
                 score_col = f"{base_name}_score"
                 df = df.with_columns([pl.col(col).alias(score_col)])
+
+        # Drop multiselect response_options columns (they're redundant - all options share same list)
+        df = df.select(
+            [
+                col
+                for col in df.columns
+                if not (
+                    "_response_options_" in col
+                    and col.split("_response_options_")[-1].split("_")[-1].isdigit()
+                )
+            ]
+        )
 
         # Create REDCap `_response` columns from `_index` for select items (`_index + 1`)
         for col in index_cols:
