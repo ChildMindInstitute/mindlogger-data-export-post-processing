@@ -99,20 +99,22 @@ class WideFormat(Output):
         df: pl.DataFrame, option_scores: pl.DataFrame, *, include_options: bool = False
     ) -> pl.DataFrame:
         del option_scores
-
-        # Extract response_options before dropping item
+        item_options_map: pl.DataFrame = pl.DataFrame()
+        # Extract `response_options` before exploding (all options share the same list)
         if include_options:
-            df = df.with_columns(
-                item_option=pl.col("item").struct.field("response_options"),
-                response_options=pl.col("item").struct.field("response_options"),
-            )
-        else:
-            df = df.with_columns(
-                item_option=pl.col("item").struct.field("response_options")
-            )
+            # Get unique `response_options` per item (before exploding)
+            item_options_map = df.select(
+                [
+                    pl.col("item").struct.field("name").alias("item_name"),
+                    pl.col("item")
+                    .struct.field("response_options")
+                    .alias("response_options"),
+                ]
+            ).unique(subset=["item_name"])
 
         df = (
-            df.explode("item_option")
+            df.with_columns(item_option=pl.col("item").struct.field("response_options"))
+            .explode("item_option")
             # Generate value column indicating presence of response.
             .with_columns(
                 response_present=pl.col("item_option")
@@ -129,15 +131,21 @@ class WideFormat(Output):
                 )
             )
             .drop("item_option", "item")
+            .pivot(
+                on=["item_option_pivot"], values="response_present", sort_columns=True
+            )
         )
 
-        pivot_values = ["response_present"]
+        # Join back the `response_options` for each item
         if include_options:
-            pivot_values.append("response_options")
+            for row in item_options_map.iter_rows(named=True):
+                item_name = row["item_name"]
+                options_col = f"{item_name}_options"
+                df = df.with_columns(
+                    [pl.lit(row["response_options"]).alias(options_col)]
+                )
 
-        return df.pivot(
-            on=["item_option_pivot"], values=pivot_values, sort_columns=True
-        )
+        return df
 
     @staticmethod
     def _map_response_column_names(cname: str) -> str:
