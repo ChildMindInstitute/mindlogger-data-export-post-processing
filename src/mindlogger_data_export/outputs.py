@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 from abc import ABC
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
+from typing import Protocol, Self
 
 import polars as pl
 import polars.selectors as cs
@@ -17,6 +20,20 @@ from .mindlogger import MindloggerData
 from .schema import ItemType
 
 LOG = logging.getLogger(__name__)
+
+
+class PivotFunction(Protocol):
+    """Pivot Functions with keyword-only `include_options`."""
+
+    def __call__(
+        self,
+        df: pl.DataFrame,
+        option_scores: pl.DataFrame,
+        *,
+        include_options: bool = False,
+    ) -> Self:
+        """Signature for Pivot Functions with keyword-only `include_options`."""
+        ...
 
 
 @dataclass
@@ -72,21 +89,35 @@ class WideFormat(Output):
 
     NAME = "wide"
 
+    def __init__(self, *args, include_options: bool = False, **kwargs) -> None:
+        """Initialize wide data format without options by default."""
+        super().__init__(*args, **kwargs)
+        self._include_options = include_options
+
     @staticmethod
     def _pivot_multiselect(
-        df: pl.DataFrame, option_scores: pl.DataFrame
+        df: pl.DataFrame, option_scores: pl.DataFrame, *, include_options: bool = False
     ) -> pl.DataFrame:
         del option_scores
-        return (
-            df.with_columns(item_option=pl.col("item").struct.field("response_options"))
-            .explode("item_option")
+
+        # Extract response_options before dropping item
+        if include_options:
+            df = df.with_columns(
+                item_option=pl.col("item").struct.field("response_options"),
+                response_options=pl.col("item").struct.field("response_options"),
+            )
+        else:
+            df = df.with_columns(
+                item_option=pl.col("item").struct.field("response_options")
+            )
+
+        df = (
+            df.explode("item_option")
             # Generate value column indicating presence of response.
             .with_columns(
                 response_present=pl.col("item_option")
                 .struct.field("value")
                 .is_in(pl.col("response_value").struct.field("value")),
-                # response_index=pl.col("item_option").struct.field("value"),
-                # response_name=pl.col("item_option").struct.field("name"),
             )
             .drop("response_value")
             # Generate pivot column.
@@ -98,14 +129,21 @@ class WideFormat(Output):
                 )
             )
             .drop("item_option", "item")
-            .pivot(
-                on=["item_option_pivot"], values="response_present", sort_columns=True
-            )
+        )
+
+        pivot_values = ["response_present"]
+        if include_options:
+            pivot_values.append("response_options")
+
+        return df.pivot(
+            on=["item_option_pivot"], values=pivot_values, sort_columns=True
         )
 
     @staticmethod
     def _map_response_column_names(cname: str) -> str:
         parts = cname.split("__", 1)
+        if parts[0] == "response_options":
+            return f"{parts[1]}_options"
         return "_".join([parts[1], parts[0].removeprefix("response")])
 
     @staticmethod
@@ -115,7 +153,7 @@ class WideFormat(Output):
 
     @staticmethod
     def _pivot_singleselect(
-        df: pl.DataFrame, option_scores: pl.DataFrame
+        df: pl.DataFrame, option_scores: pl.DataFrame, *, include_options: bool = False
     ) -> pl.DataFrame:
         # Rename columns in scores table.
         response_options = option_scores.rename(
@@ -145,12 +183,30 @@ class WideFormat(Output):
                 how="left",
                 validate="m:1",
             )
-            # Extract item name for pivot.
-            .with_columns(item_name=pl.col("item").struct.field("name"))
-            .drop("item")
-            # Pivot on item_name producing 3 columns for each item.
-            .pivot(on="item_name", values=cs.starts_with("response"), separator="__")
-            # Rename pivoted columns to
+        )
+
+        # Optionally extract response_options before dropping item
+        if include_options:
+            df = df.with_columns(
+                response_options=pl.col("item").struct.field("response_options")
+            )
+
+        # Extract item name for pivot.
+        df = df.with_columns(item_name=pl.col("item").struct.field("name")).drop("item")
+
+        # Determine which columns to pivot
+        pivot_values = cs.starts_with("response")
+        if include_options:
+            pivot_values = [
+                "response_index",
+                "response_score",
+                "response_response",
+                "response_options",
+            ]
+
+        df = (
+            df.pivot(on="item_name", values=pivot_values, separator="__")
+            # Rename pivoted columns
             .with_columns(
                 cs.starts_with("response").name.map(
                     WideFormat._map_response_column_names
@@ -173,8 +229,14 @@ class WideFormat(Output):
         return df.with_columns(WideFormat._fill_item_response(*null_score_columns))
 
     @staticmethod
-    def _pivot_text(df: pl.DataFrame, option_scores: pl.DataFrame) -> pl.DataFrame:
+    def _pivot_text(
+        df: pl.DataFrame, option_scores: pl.DataFrame, *, include_options=NotImplemented
+    ) -> pl.DataFrame:
+        current_frame = inspect.currentframe()
+        _qualname = current_frame.f_code.co_qualname if current_frame else __name__
+        LOG.debug("`include_options` parameter %s for %s", include_options, _qualname)
         del option_scores
+
         return (
             df.with_columns(
                 response_value=pl.col("response_value").struct.field("text"),
@@ -197,30 +259,41 @@ class WideFormat(Output):
         )
 
     @staticmethod
-    def _pivot_subscale(df: pl.DataFrame, option_scores: pl.DataFrame) -> pl.DataFrame:
+    def _pivot_subscale(
+        df: pl.DataFrame, option_scores: pl.DataFrame, *, include_options: bool = False
+    ) -> pl.DataFrame:
         del option_scores
-        return (
-            df.with_columns(
-                response_value=pl.col("response_value").struct.field("subscale"),
-                item_name=pl.col("item").struct.field("name"),
+
+        df = df.with_columns(
+            response_value=pl.col("response_value").struct.field("subscale"),
+            item_name=pl.col("item").struct.field("name"),
+        ).with_columns(response_response=pl.col("response_value"))
+
+        # Optionally extract response_options before dropping item
+        if include_options:
+            df = df.with_columns(
+                response_options=pl.col("item").struct.field("response_options")
             )
-            .with_columns(response_response=pl.col("response_value"))
-            .drop("item")
-            .pivot(
-                on="item_name",
-                values=["response_value", "response_response"],
-                separator="__",
-            )
-            .rename(
-                lambda s: s.removesuffix("__response_response")
-                if s.endswith("__response_response")
-                else s.removesuffix("_value")
-                if s.endswith("__response_value")
-                else s
-            )
+
+        df = df.drop("item")
+
+        pivot_values = ["response_value", "response_response"]
+        if include_options:
+            pivot_values.append("response_options")
+
+        return df.pivot(
+            on="item_name",
+            values=pivot_values,
+            separator="__",
+        ).rename(
+            lambda s: s.removesuffix("__response_response")
+            if s.endswith("__response_response")
+            else s.removesuffix("_value")
+            if s.endswith("__response_value")
+            else s
         )
 
-    PIVOT_FNS = {
+    PIVOT_FNS: dict[tuple[ItemType], PivotFunction] = {
         (ItemType.MultipleSelection,): _pivot_multiselect,
         (ItemType.SingleSelection,): _pivot_singleselect,
         (ItemType.Text,): _pivot_text,
@@ -230,7 +303,9 @@ class WideFormat(Output):
     def _get_pivot_fn(
         self, partition_type: tuple[ItemType]
     ) -> Callable[[pl.DataFrame, pl.DataFrame], pl.DataFrame]:
-        return self.PIVOT_FNS.get(partition_type, self._pivot_text)
+        pivot_fn = self.PIVOT_FNS.get(partition_type, self._pivot_text)
+        # Use partial to bind the keyword-only argument
+        return partial(pivot_fn, include_options=self._include_options)
 
     def _typed_pivot(
         self, df: pl.DataFrame, option_scores: pl.DataFrame
@@ -319,7 +394,8 @@ class RedcapImportFormat(WideFormat):
 
     NAME = "redcap"
 
-    def __init__(self, project: str = "curious_parent_arm_1", *args, **kwargs):
+    def __init__(self, project: str = "curious_parent_arm_1", *args, **kwargs) -> None:
+        kwargs.setdefault("include_options", True)
         super().__init__(*args, **kwargs)
         self._project = project
         self._instrument_row_count: dict[str, int | None] = {}
@@ -346,12 +422,25 @@ class RedcapImportFormat(WideFormat):
             {
                 col: col[:-5]
                 for col in df.columns
-                if col.endswith("_start_time", "_end_time")
+                if col.endswith(("_start_time", "_end_time"))
             }
         )
 
-        # Handle response columns
-        # Text remains the same, selections = index + 1
+        # Stringify `_options` columns
+        options_cols = [col for col in df.columns if col.endswith("_options")]
+        for col in options_cols:
+            df = df.with_columns(
+                [
+                    pl.format(
+                        "[{}]",
+                        pl.col(col)
+                        .list.eval(pl.element().struct.json_encode())
+                        .list.join(", "),
+                    ).alias(col)
+                ]
+            )
+
+        # For non-text items, drop the `_response` columns
         response_cols = [col for col in df.columns if col.endswith("_response")]
         index_cols = [col for col in df.columns if col.endswith("_index")]
         index_bases = {col.replace("_index", "") for col in index_cols}
@@ -369,19 +458,22 @@ class RedcapImportFormat(WideFormat):
                 )
             ]
         )
+
+        # For items with `_index` but no `_score`, create `_score` from `_index`
+        score_cols = [col for col in df.columns if col.endswith("_score")]
+        score_bases = {col.replace("_score", "") for col in score_cols}
+        for col in index_cols:
+            base_name = col.replace("_index", "")
+            if base_name not in score_bases:
+                score_col = f"{base_name}_score"
+                df = df.with_columns([pl.col(col).alias(score_col)])
+
+        # Create REDCap `_response` columns from `_index` for select items (`_index + 1`)
         for col in index_cols:
             response_col = col.replace("_index", "_response")
             df = df.with_columns([(pl.col(col) + 1).alias(response_col)])
-        df = df.select([col for col in df.columns if not col.endswith("_index")])
 
-        # Drop bare item columns that have a corresponding _response column
-        # These are score columns that we don't need
-        response_bases = {
-            col.replace("_response", "")
-            for col in df.columns
-            if col.endswith("_response")
-        }
-        return df.select([col for col in df.columns if col not in response_bases])
+        return df
 
     def _format_activity(self, df: pl.DataFrame, activity_name: str) -> pl.DataFrame:
         """Format a single activity's data for REDCap import."""
