@@ -141,9 +141,14 @@ class WideFormat(Output):
                 return "_".join([parts[1], parts[0].removeprefix("response")])
 
     @staticmethod
-    def _fill_item_response(*null_score_columns: str) -> Generator[pl.Expr, None, None]:
+    def _fill_item_response(
+        df: pl.DataFrame, *null_score_columns: str
+    ) -> Generator[pl.Expr, None, None]:
         for col in null_score_columns:
-            yield pl.col(f"{col}__response").alias(col)
+            if f"{col}__response" in df.columns:
+                yield pl.col(f"{col}__response").alias(col)
+            elif f"{col}_response" in df.columns:
+                yield pl.col(f"{col}_response").alias(col)
 
     @staticmethod
     def _pivot_singleselect(
@@ -225,7 +230,7 @@ class WideFormat(Output):
             col for col in score_columns.values() if df[col].is_null().all()
         }
         # Fill null <QUESTION> columns with value of <QUESTION>__response.
-        return df.with_columns(WideFormat._fill_item_response(*null_score_columns))
+        return df.with_columns(WideFormat._fill_item_response(df, *null_score_columns))
 
     @staticmethod
     def _pivot_text(
