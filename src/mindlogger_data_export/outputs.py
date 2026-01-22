@@ -449,24 +449,15 @@ class RedcapImportFormat(WideFormat):
                 ]
             )
 
-        # For non-text items, drop the `_response` columns
-        # response_cols = [col for col in df.columns if col.endswith("_response")]
+        # Handle text items uniquely
+        response_cols = [col for col in df.columns if col.endswith("_response")]
         index_cols = [col for col in df.columns if col.endswith("_index")]
-        # index_bases = {col.replace("_index", "") for col in index_cols}
-        # text_item_response_cols = [
-        #     col
-        #     for col in response_cols
-        #     if col.replace("_response", "") not in index_bases
-        # ]
-        # df = df.select(
-        #     [
-        #         col
-        #         for col in df.columns
-        #         if not (
-        #             col.endswith("_response") and col not in text_item_response_cols
-        #         )
-        #     ]
-        # )
+        index_bases = {col.replace("_index", "") for col in index_cols}
+        text_item_response_cols = [
+            col
+            for col in response_cols
+            if col.replace("_response", "") not in index_bases
+        ]
 
         # For items with `_index` but no `_score`, create `_score` from `_index`
         score_cols = [col for col in df.columns if col.endswith("_score")]
@@ -477,7 +468,7 @@ class RedcapImportFormat(WideFormat):
                 score_col = f"{base_name}_score"
                 df = df.with_columns([pl.col(col).alias(score_col)])
 
-        # Drop multiselect response_options columns (they're redundant - all options share same list)
+        # Drop multiselect response_options columns (they're redundant)
         df = df.select(
             [
                 col
@@ -489,27 +480,57 @@ class RedcapImportFormat(WideFormat):
             ]
         )
 
-        # Create REDCap `_response` columns from `_index` for select items (`_index + 1`)
-        # for col in index_cols:
-        #     response_col = col.replace("_index", "_response")
-        #     df = df.with_columns([(pl.col(col) + 1).alias(response_col)])
+        # Create REDCap `_response` columns
+        # If the original response value starts with a number, use that number; otherwise use index + 1
+        for col in [_ for _ in index_cols if _ not in text_item_response_cols]:
+            response_col = col.replace("_index", "_response")
+            base_name = col.replace("_index", "")
+            # Check if there's an existing response column with values that start with numbers
+            original_response_col = f"{base_name}_response"
+            if original_response_col in df.columns:
+                # Try to extract leading number from response value, fall back to index + 1
+                df = df.with_columns(
+                    [
+                        pl.when(
+                            pl.col(original_response_col)
+                            .cast(pl.Utf8)
+                            .str.extract(r"^(\d+)", 1)
+                            .is_not_null()
+                        )
+                        .then(
+                            pl.col(original_response_col)
+                            .cast(pl.Utf8)
+                            .str.extract(r"^(\d+)", 1)
+                            .cast(pl.Int64)
+                        )
+                        .otherwise(pl.col(col) + 1)
+                        .alias(response_col)
+                    ]
+                )
+            else:
+                # No original response column, use index + 1
+                df = df.with_columns([(pl.col(col) + 1).alias(response_col)])
 
-        # Drop bare item columns that have _response versions
+        # Drop bare item columns that have _response, _score, or _index versions
         response_bases = {
             col.replace("_response", "")
             for col in df.columns
             if col.endswith("_response")
         }
-        df = df.select(
+        score_bases = {
+            col.replace("_score", "") for col in df.columns if col.endswith("_score")
+        }
+        index_bases = {
+            col.replace("_index", "") for col in df.columns if col.endswith("_index")
+        }
+
+        return df.select(
             [
                 col
                 for col in df.columns
-                if not (col in response_bases and f"{col}_response" in df.columns)
+                if col not in response_bases | score_bases | index_bases
             ]
-        )
-
-        # Drop response metadata columns
-        return df.select(
+        ).select(
             [
                 col
                 for col in df.columns
