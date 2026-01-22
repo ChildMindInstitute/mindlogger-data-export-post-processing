@@ -1,10 +1,11 @@
 [project]
 name = "mindlogger-data-export"
-version = "0.1.10"
+version = "0.1.11"
 description = "Add your description here"
 readme = "README.md"
 authors = [
     { name = "Gabriel Schubiner", email = "gabriel.schubiner@childmind.org" },
+    { name = "Jon Cluce", email = "jon.clucas@childmind.org"}
 ]
 requires-python = ">=3.11"
 dependencies = [
