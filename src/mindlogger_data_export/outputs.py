@@ -130,9 +130,15 @@ class WideFormat(Output):
     @staticmethod
     def _map_response_column_names(cname: str) -> str:
         parts = cname.split("__", 1)
-        if parts[0] == "response_options":
-            return f"{parts[1]}_options"
-        return "_".join([parts[1], parts[0].removeprefix("response")])
+        match parts[0]:
+            case "response_options":
+                return f"{parts[1]}_options"
+            case "response_response":
+                return f"{parts[1]}_response"
+            case "response_value":
+                return f"{parts[1]}_score"
+            case _:
+                return "_".join([parts[1], parts[0].removeprefix("response")])
 
     @staticmethod
     def _fill_item_response(*null_score_columns: str) -> Generator[pl.Expr, None, None]:
@@ -483,7 +489,29 @@ class RedcapImportFormat(WideFormat):
             response_col = col.replace("_index", "_response")
             df = df.with_columns([(pl.col(col) + 1).alias(response_col)])
 
-        return df
+        # Drop bare item columns that have _response versions
+        response_bases = {
+            col.replace("_response", "")
+            for col in df.columns
+            if col.endswith("_response")
+        }
+        df = df.select(
+            [
+                col
+                for col in df.columns
+                if not (col in response_bases and f"{col}_response" in df.columns)
+            ]
+        )
+
+        # Drop response metadata columns
+        return df.select(
+            [
+                col
+                for col in df.columns
+                if not col.startswith(f"{activity_prefix}_response_response_")
+                and not col.startswith(f"{activity_prefix}_response_value_")
+            ]
+        )
 
     def _format_activity(self, df: pl.DataFrame, activity_name: str) -> pl.DataFrame:
         """Format a single activity's data for REDCap import."""
