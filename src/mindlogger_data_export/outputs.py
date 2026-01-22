@@ -527,13 +527,30 @@ class RedcapImportFormat(WideFormat):
             col.replace("_index", "") for col in df.columns if col.endswith("_index")
         }
 
+        df = df.rename(
+            {
+                col: col.replace(
+                    f"{activity_prefix}_response_response_", f"{activity_prefix}_"
+                ).replace("_response_response_", "_")
+                + "_response"
+                for col in df.columns
+                if f"{activity_prefix}_response_response_" in col
+            }
+        ).rename(
+            {
+                col: col.replace(
+                    f"{activity_prefix}_response_value_", f"{activity_prefix}_"
+                ).replace("_response_value_", "_")
+                + "_score"
+                for col in df.columns
+                if f"{activity_prefix}_response_value_" in col
+            }
+        )
         return df.select(
             [
                 col
                 for col in df.columns
                 if col not in (response_bases | score_bases | index_bases)
-                and not col.startswith(f"{activity_prefix}_response_response_")
-                and not col.startswith(f"{activity_prefix}_response_value_")
             ]
         )
 
