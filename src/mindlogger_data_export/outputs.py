@@ -6,14 +6,15 @@ import inspect
 import logging
 import re
 from abc import ABC
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Protocol, Self
+from typing import Protocol
 
 import polars as pl
 import polars.selectors as cs
+from polars._typing import ColumnNameOrSelector
 
 from . import util
 from .mindlogger import MindloggerData
@@ -31,7 +32,7 @@ class PivotFunction(Protocol):
         option_scores: pl.DataFrame,
         *,
         include_options: bool = False,
-    ) -> Self:
+    ) -> pl.DataFrame:
         """Signature for Pivot Functions with keyword-only `include_options`."""
         ...
 
@@ -194,7 +195,9 @@ class WideFormat(Output):
         df = df.with_columns(item_name=pl.col("item").struct.field("name")).drop("item")
 
         # Determine which columns to pivot
-        pivot_values = cs.starts_with("response")
+        pivot_values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] = (
+            cs.starts_with("response")
+        )
         if include_options:
             pivot_values = [
                 "response_index",
@@ -528,13 +531,8 @@ class RedcapImportFormat(WideFormat):
             [
                 col
                 for col in df.columns
-                if col not in response_bases | score_bases | index_bases
-            ]
-        ).select(
-            [
-                col
-                for col in df.columns
-                if not col.startswith(f"{activity_prefix}_response_response_")
+                if col not in (response_bases | score_bases | index_bases)
+                and not col.startswith(f"{activity_prefix}_response_response_")
                 and not col.startswith(f"{activity_prefix}_response_value_")
             ]
         )
