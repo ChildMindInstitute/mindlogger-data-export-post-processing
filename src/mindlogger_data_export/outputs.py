@@ -450,23 +450,23 @@ class RedcapImportFormat(WideFormat):
             )
 
         # For non-text items, drop the `_response` columns
-        response_cols = [col for col in df.columns if col.endswith("_response")]
+        # response_cols = [col for col in df.columns if col.endswith("_response")]
         index_cols = [col for col in df.columns if col.endswith("_index")]
-        index_bases = {col.replace("_index", "") for col in index_cols}
-        text_item_response_cols = [
-            col
-            for col in response_cols
-            if col.replace("_response", "") not in index_bases
-        ]
-        df = df.select(
-            [
-                col
-                for col in df.columns
-                if not (
-                    col.endswith("_response") and col not in text_item_response_cols
-                )
-            ]
-        )
+        # index_bases = {col.replace("_index", "") for col in index_cols}
+        # text_item_response_cols = [
+        #     col
+        #     for col in response_cols
+        #     if col.replace("_response", "") not in index_bases
+        # ]
+        # df = df.select(
+        #     [
+        #         col
+        #         for col in df.columns
+        #         if not (
+        #             col.endswith("_response") and col not in text_item_response_cols
+        #         )
+        #     ]
+        # )
 
         # For items with `_index` but no `_score`, create `_score` from `_index`
         score_cols = [col for col in df.columns if col.endswith("_score")]
@@ -490,9 +490,9 @@ class RedcapImportFormat(WideFormat):
         )
 
         # Create REDCap `_response` columns from `_index` for select items (`_index + 1`)
-        for col in index_cols:
-            response_col = col.replace("_index", "_response")
-            df = df.with_columns([(pl.col(col) + 1).alias(response_col)])
+        # for col in index_cols:
+        #     response_col = col.replace("_index", "_response")
+        #     df = df.with_columns([(pl.col(col) + 1).alias(response_col)])
 
         # Drop bare item columns that have _response versions
         response_bases = {
