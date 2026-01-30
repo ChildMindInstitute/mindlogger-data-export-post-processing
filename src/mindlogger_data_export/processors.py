@@ -104,6 +104,52 @@ class DateTimeProcessor(ReportProcessor):
         )
 
 
+class DeduplicateResponsesProcessor(ReportProcessor):
+    """Deduplicate responses, keeping latest by "activity_end_time".
+
+    This processor removes duplicate item responses for the same
+    user/activity/submission combination, keeping only the most recent entry.
+    """
+
+    NAME = "DeduplicateResponses"
+    PRIORITY = 9  # after datetime handling
+    ENABLE = True
+
+    def _run(self, report: pl.DataFrame) -> pl.DataFrame:
+        """Deduplicate report by keeping latest activity_end_time."""
+        # Define the columns that should be unique
+        unique_cols = ["target_user_secret_id", "source_user_secret_id", "activity_id"]
+
+        # Check which columns actually exist in the report
+        existing_unique_cols = [col for col in unique_cols if col in report.columns]
+
+        # Check for duplicates
+        duplicate_check = report.group_by(existing_unique_cols).agg(
+            pl.count().alias("count")
+        )
+        duplicates = duplicate_check.filter(pl.col("count") > 1)
+
+        if duplicates.height > 0:
+            LOG.warning(
+                "Found %d duplicate item responses. "
+                "Keeping the latest entry by activity_end_time.",
+                duplicates.height,
+            )
+            LOG.debug("Duplicate details:\n%s", duplicates)
+
+            # Deduplicate by keeping the row with the latest activity_end_time
+            report = report.sort("activity_end_time", descending=True).unique(
+                subset=existing_unique_cols, keep="first"
+            )
+
+            LOG.info(
+                "Removed %d duplicate rows",
+                duplicates["count"].sum() - duplicates.height,
+            )
+
+        return report
+
+
 class ResponseStructProcessor(ReportProcessor):
     """Convert response to struct using Lark.
 
@@ -143,16 +189,27 @@ class TypedResponseStructProcessor(ReportProcessor):
     PRIORITY = 40
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
+        def parse_with_nulls(d) -> dict | None:
+            """Parse with None fallback for null values."""
+            response = d["response"]
+            if (
+                not response
+                or response.strip() in ("", "null", "None")
+                or "value: null" in response
+            ):
+                return None
+            return self.PARSER.parse_typed(d["item_type"], response)
+
         return report.with_columns(
             response=pl.struct(
                 status=pl.col("item_response_status"),
-                raw_score=pl.col("rawScore").cast(pl.Int64),
+                raw_score=pl.col("rawScore").cast(pl.Float64).cast(pl.Int64),
                 raw_response=pl.col("item_response"),
                 value=pl.struct(
                     item_type=pl.col("item").struct.field("type"),
                     response=pl.col("item_response").str.strip_chars(),
                 ).map_elements(
-                    lambda d: self.PARSER.parse_typed(d["item_type"], d["response"]),
+                    parse_with_nulls,
                     schema.RESPONSE_VALUE_SCHEMA,
                 ),
             )
