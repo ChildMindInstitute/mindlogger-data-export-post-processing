@@ -616,10 +616,25 @@ class RedcapImportFormat(WideFormat):
 
         # Format each activity for REDCap
         outputs = []
+        null_response_mask = pl.col("item_response") == "value: null"
         for wide_output in wide_outputs:
             activity_name = wide_output.name
-            formatted_df = self._format_activity(wide_output.output, activity_name)
-            outputs.append(NamedOutput(f"{activity_name}_redcap", formatted_df))
+            # Split into responses and nulls
+            response_df = wide_output.output.filter(~null_response_mask)
+            null_df = wide_output.output.filter(null_response_mask)
+
+            # Add formatted responses to outputs
+            formatted_df = self._format_activity(response_df, activity_name)
+            if len(response_df) > 0:
+                outputs.append(
+                    NamedOutput(name=f"{activity_name}_redcap", output=formatted_df)
+                )
+
+            # Add null responses to separate table
+            if len(null_df) > 0:
+                outputs.append(
+                    NamedOutput(name=f"{activity_name}_null_responses", output=null_df)
+                )
 
         return outputs
 
