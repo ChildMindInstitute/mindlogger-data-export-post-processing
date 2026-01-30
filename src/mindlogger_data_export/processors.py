@@ -146,7 +146,7 @@ class TypedResponseStructProcessor(ReportProcessor):
         return report.with_columns(
             response=pl.struct(
                 status=pl.col("item_response_status"),
-                raw_score=pl.col("rawScore").cast(pl.Int64),
+                raw_score=pl.col("rawScore").cast(pl.Float64).cast(pl.Int64),
                 raw_response=pl.col("item_response"),
                 value=pl.struct(
                     item_type=pl.col("item").struct.field("type"),
