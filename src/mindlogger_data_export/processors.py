@@ -118,7 +118,7 @@ class DeduplicateResponsesProcessor(ReportProcessor):
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
         """Deduplicate report by keeping latest activity_end_time."""
         # Define the columns that should be unique
-        unique_cols = ["user_id", "activity_id", "activity_submission_id", "item_id"]
+        unique_cols = ["target_user_secret_id", "source_user_secret_id", "activity_id"]
 
         # Check which columns actually exist in the report
         existing_unique_cols = [col for col in unique_cols if col in report.columns]
