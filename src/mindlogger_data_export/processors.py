@@ -143,6 +143,17 @@ class TypedResponseStructProcessor(ReportProcessor):
     PRIORITY = 40
 
     def _run(self, report: pl.DataFrame) -> pl.DataFrame:
+        def parse_with_nulls(d) -> dict | None:
+            """Parse with None fallback for null values."""
+            response = d["response"]
+            if (
+                not response
+                or response.strip() in ("", "null", "None")
+                or "value: null" in response
+            ):
+                return None
+            return self.PARSER.parse_typed(d["item_type"], response)
+
         return report.with_columns(
             response=pl.struct(
                 status=pl.col("item_response_status"),
@@ -152,7 +163,7 @@ class TypedResponseStructProcessor(ReportProcessor):
                     item_type=pl.col("item").struct.field("type"),
                     response=pl.col("item_response").str.strip_chars(),
                 ).map_elements(
-                    lambda d: self.PARSER.parse_typed(d["item_type"], d["response"]),
+                    parse_with_nulls,
                     schema.RESPONSE_VALUE_SCHEMA,
                 ),
             )
